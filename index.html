@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Question Manager</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="notification" class="notification"></div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>📚 GitHub Question Manager</h1>
+            <p>Manage and sync questions with your GitHub repository</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('add-tab')">➕ Add Questions</button>
+            <button class="tab-btn" onclick="showTab('queue-tab')">📋 Queue (<span id="queueCount">0</span>)</button>
+            <button class="tab-btn" onclick="showTab('manager-tab')">✏️ Manage Questions</button>
+        </div>
+        
+        <!-- Tab 1: Add Questions -->
+        <div id="add-tab" class="tab-content active">
+            <!-- Left Column: Configuration & Input -->
+            <div class="form-section">
+                <div class="github-config">
+                    <h3>GitHub Configuration</h3>
+                    <div class="form-group">
+                        <label>GitHub Repository</label>
+                        <input type="text" id="repoUrl" placeholder="https://github.com/username/repo">
+                        <div class="hint">Format: https://github.com/username/repository-name</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>GitHub Token</label>
+                        <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+                        <div class="hint">
+                            <a href="https://github.com/settings/tokens" target="_blank" style="color: #63b3ed;">
+                                Generate token here (needs "repo" permission)
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <button class="btn" onclick="testConnection()">🔗 Test Connection</button>
+                </div>
+                
+                <div id="editModeIndicator" class="edit-mode-indicator">
+                    <span id="editModeText">Editing Question...</span>
+                    <button class="btn btn-sm btn-secondary" id="cancelEditBtn">Cancel</button>
+                </div>
+
+                <h3>Question Details</h3>
+                <form id="questionForm">
+                    <div class="form-group">
+                        <label for="source" class="required">Source</label>
+                        <select id="source" required>
+                            <option value="">Select Source</option>
+                            <option value="DSE">DSE</option>
+                            <option value="AL">AL</option>
+                            <option value="CE">CE</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="year">Published Year</label>
+                        <input type="number" id="year" min="1900" max="2100" placeholder="e.g., 2023">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="questionNumber" class="required">Question Number</label>
+                        <input type="text" id="questionNumber" required placeholder="e.g., 1, 1a, 1bi, etc.">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="questionType" class="required">Question Type</label>
+                        <select id="questionType" required>
+                            <option value="">Select Type</option>
+                            <option value="Multiple-choice">Multiple-choice</option>
+                            <option value="Structural question">Structural question</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="marks" class="required">Marks</label>
+                        <input type="number" id="marks" min="0" step="1" required placeholder="e.g., 5">
+                    </div>
+                    
+                    <div class="form-group" id="mcqSection" style="display: none;">
+                        <label>MCQ Options</label>
+                        <div id="mcqOptions">
+                            <!-- Options will be added here -->
+                        </div>
+                        <div class="hint">Select the correct answer for multiple-choice questions.</div>
+                        <button type="button" id="addOption" class="btn">
+                            <span>+</span> Add Option
+                        </button>
+                    </div>
+
+                    <!-- structuralSection moved below question fields so question appears before answer -->
+                    
+                    <div class="form-group">
+                        <label class="required">Topics</label>
+                        <div class="checkbox-group" id="topicCheckboxes">
+                            <!-- Topics will be added dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="questionText" class="required">Question Text</label>
+                        <textarea id="questionText" rows="30" required placeholder="Enter the question text..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="questionImageUrl">Question Image</label>
+                        <input type="text" id="questionImageUrl" placeholder="Existing image URL or GitHub path">
+                        <input type="file" id="questionImageFile" accept="image/*" class="file-input">
+                        <div style="display:flex;gap:8px;margin-top:8px;">
+                            <button type="button" id="insertQuestionInlineBtn" class="btn btn-secondary btn-sm">Insert image inline</button>
+                            <div class="hint" style="margin:0;">Upload an image or paste a link/path. Use "Insert image inline" to place it inside the question text.</div>
+                        </div>
+                    </div>
+
+                                    <!-- Structural Answer block placed after question fields as requested -->
+                                    <div class="form-group" id="structuralSection" style="display: none;">
+                                        <label for="structuralAnswerText">Full Answer</label>
+                                        <textarea id="structuralAnswerText" rows="4" placeholder="Type the full answer or supporting notes..."></textarea>
+                                        <input type="text" id="structuralAnswerImageUrl" placeholder="Full answer image URL or path (optional)">
+                                        <input type="file" id="structuralAnswerImageFile" accept="image/*" class="file-input">
+                                        <div style="display:flex;gap:8px;margin-top:8px;">
+                                            <button type="button" id="insertStructuralInlineBtn" class="btn btn-secondary btn-sm">Insert image inline</button>
+                                            <div class="hint" style="margin:0;">Provide detailed answers, screenshots, or diagrams; use "Insert image inline" to put the image inside the answer text.</div>
+                                        </div>
+                                        <div class="keyword-manager">
+                                            <label>Keywords</label>
+                                            <div class="keyword-input-row">
+                                                <input type="text" id="keywordInput" placeholder="Enter keyword or phrase">
+                                                <button type="button" id="addKeyword" class="btn btn-secondary btn-sm">+</button>
+                                            </div>
+                                            <div id="keywordList" class="keyword-list empty">
+                                                <span class="keyword-placeholder">No keywords yet.</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                    
+                    <div class="toolbar">
+                        <button type="button" id="clearForm" class="btn btn-secondary">
+                            Clear Form
+                        </button>
+                        <button type="submit" id="submitQuestion" class="btn btn-success">
+                            ✅ Add to Queue
+                        </button>
+                    </div>
+                    
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Right Column: Preview & Status -->
+            <div class="form-section">
+                <h3>Question Preview</h3>
+                <div class="json-output" id="jsonPreview">
+{
+  "question": "Preview will appear here..."
+}
+                </div>
+                
+                <h3 style="margin-top: 30px;">GitHub Files Status</h3>
+                <div class="file-list" id="fileStatus">
+                    <div class="file-item">
+                        <span>📁 topics/</span>
+                        <span class="status">Waiting for connection...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Queue -->
+        <div id="queue-tab" class="tab-content full-width">
+            <div class="form-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3>Pending Questions</h3>
+                    <button id="syncQueueBtn" class="btn btn-success">🔄 Sync Queue to GitHub</button>
+                </div>
+                
+                <div class="queue-list" id="queueList">
+                    <div class="empty-state">Queue is empty</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Manager -->
+        <div id="manager-tab" class="tab-content full-width">
+            <div class="form-section">
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-end;">
+                    <div style="flex: 1;">
+                        <label>Select Topic to Manage</label>
+                        <select id="managerTopicSelect">
+                            <!-- Options added by JS -->
+                        </select>
+                    </div>
+                    <button id="loadTopicBtn" class="btn">📂 Load Questions</button>
+                </div>
+
+                <div class="toolbar" style="margin-bottom: 15px; justify-content: flex-start;">
+                    <button id="deleteSelectedBtn" class="btn btn-danger btn-sm">🗑️ Delete Selected</button>
+                </div>
+
+                <div class="question-table-container" id="questionList">
+                    <div class="empty-state">Select a topic and click Load to view questions.</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="status-bar">
+            <div class="status">
+                <div class="status-dot" id="connectionStatus"></div>
+                <span id="connectionText">Disconnected from GitHub</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/github.js"></script>
+    <script src="js/ui.js"></script>
+    <!-- Loader that appends a cache-busting timestamp to ensure latest files are fetched -->
+    <script>
+        (function loadScriptsSequentially(files) {
+            function loadNext(i) {
+                    if (i >= files.length) {
+                        try { if (typeof populateManagerSelect === 'function') populateManagerSelect(); } catch(e) { /* ignore */ }
+                        return;
+                    }
+                    var s = document.createElement('script');
+                    s.src = files[i] + '?v=' + Date.now();
+                    s.onload = function() { loadNext(i + 1); };
+                    s.onerror = function() { console.warn('Failed to load', files[i]); loadNext(i + 1); };
+                    document.body.appendChild(s);
+                }
+                loadNext(0);
+        })(['js/config.js','js/utils.js','js/github.js','js/ui.js','js/app.js']);
+    </script>
+</body>
+</html>
