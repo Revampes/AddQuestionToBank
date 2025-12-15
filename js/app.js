@@ -280,6 +280,47 @@ function handleFormSubmit(event) {
         return;
     }
 
+    // Prevent duplicates for certain official sources (DSE, AL, CE):
+    // Do not allow adding a question with the same source+year+questionNumber
+    // to any selected topic if that combination already exists in the repo or queue.
+    const DUP_SOURCES = ['DSE', 'AL', 'CE'];
+    function findDuplicatesForFiles(qData, files) {
+        const dupFiles = [];
+        const s = (qData.source || '').toString();
+        const y = (qData.year || '').toString();
+        const num = (qData.questionNumber || '').toString();
+
+        if (!DUP_SOURCES.includes(s) || !y) return dupFiles;
+
+        files.forEach(file => {
+            // check cached topic files (from GitHub)
+            const topic = cachedTopicFiles[file]?.content;
+            if (topic && Array.isArray(topic.questions)) {
+                const found = topic.questions.find(q => (q.source||'').toString() === s && (q.year||'').toString() === y && (q.questionNumber||'').toString() === num);
+                if (found) {
+                    dupFiles.push(file);
+                    return;
+                }
+            }
+            // also check queued items that target this file
+            const queuedDup = questionQueue.find(qi => {
+                const targets = qi.targetFiles || [];
+                if (!targets.includes(file)) return false;
+                return (qi.source||'').toString() === s && (qi.year||'').toString() === y && (qi.questionNumber||'').toString() === num;
+            });
+            if (queuedDup && !dupFiles.includes(file)) {
+                dupFiles.push(file);
+            }
+        });
+        return dupFiles;
+    }
+
+    const duplicateFiles = findDuplicatesForFiles(questionData, selectedFiles);
+    if (duplicateFiles.length > 0) {
+        showNotification(`Duplicate found for ${questionData.source} ${questionData.year} ${questionData.questionNumber} in: ${duplicateFiles.join(', ')}`, 'error');
+        return;
+    }
+
     if (!Number.isInteger(questionData.marks)) {
         showNotification('Please enter marks as a whole number', 'error');
         return;
