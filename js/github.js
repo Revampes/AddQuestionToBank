@@ -70,6 +70,16 @@ async function githubTestConnection(repoUrl, token) {
     return repoInfo;
 }
 
+// Persist repository URL and token locally after a successful connection
+function saveGitHubCredentials(repoUrl, token) {
+    try {
+        localStorage.setItem('qb_repoUrl', repoUrl);
+        localStorage.setItem('qb_githubToken', token);
+    } catch (e) {
+        console.warn('Failed to save GitHub credentials locally:', e);
+    }
+}
+
 async function createTopicsDirectory() {
     try {
         const url = `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}/contents/topics`;

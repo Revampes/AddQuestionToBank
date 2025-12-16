@@ -1,9 +1,10 @@
 // Generate unique question ID
 function generateQuestionId(source, year, number) {
-    const s = source || 'Q';
-    const y = year || 'XX';
-    const n = number || '0';
-    return `${s}${y}_${n.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+    const s = (source || 'Q').toString();
+    const y = (year || 'XX').toString();
+    const n = (number === null || number === undefined) ? '0' : number.toString();
+    const safeN = n.replace(/[^a-zA-Z0-9]/g, '_');
+    return `${s}${y}_${safeN}_${Date.now()}`;
 }
 
 // Show notification

@@ -69,10 +69,19 @@
                         <label for="year">Published Year</label>
                         <input type="number" id="year" min="1900" max="2100" placeholder="e.g., 2023">
                     </div>
+                    <div class="form-group">
+                        <label for="paper">Paper</label>
+                        <select id="paper">
+                            <option value="">Select Paper (optional)</option>
+                            <option value="1A">Paper 1A</option>
+                            <option value="1B">Paper 1B</option>
+                            <option value="2">Paper 2</option>
+                        </select>
+                    </div>
                     
                     <div class="form-group">
                         <label for="questionNumber" class="required">Question Number</label>
-                        <input type="text" id="questionNumber" required placeholder="e.g., 1, 1a, 1bi, etc.">
+                        <input type="number" id="questionNumber" required min="1" step="1" placeholder="e.g., 1">
                     </div>
                     
                     <div class="form-group">
@@ -91,6 +100,15 @@
                     
                     <div class="form-group" id="mcqSection" style="display: none;">
                         <label>MCQ Options</label>
+                        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+                            <select id="mcqTemplateSelect" style="min-width:320px;">
+                                <option value="">Select MCQ template (optional)</option>
+                                <option value="tpl1">Statement-type (1) only / (2) only / combinations</option>
+                                <option value="tpl2">Pair-wise combinations (1)&(2), (1)&(3), (2)&(3), (1),(2),(3)</option>
+                                <option value="tpl3">Assertion-Reason style (A-D explanatory)</option>
+                            </select>
+                            <button type="button" id="applyMCQTemplateBtn" class="btn">Apply Template</button>
+                        </div>
                         <div id="mcqOptions">
                             <!-- Options will be added here -->
                         </div>
@@ -121,12 +139,11 @@
                     </div>
                     
                     <div class="form-group">
-                        <label for="questionImageUrl">Question Image</label>
-                        <input type="text" id="questionImageUrl" placeholder="Existing image URL or GitHub path">
+                        <label for="questionImageFile">Question Image</label>
                         <input type="file" id="questionImageFile" accept="image/*" class="file-input">
                         <div style="display:flex;gap:8px;margin-top:8px;">
                             <button type="button" id="insertQuestionInlineBtn" class="btn btn-secondary btn-sm">Insert image inline</button>
-                            <div class="hint" style="margin:0;">Upload an image or paste a link/path. Use "Insert image inline" to place it inside the question text.</div>
+                            <div class="hint" style="margin:0;">Upload an image and use "Insert image inline" to place it inside the question text.</div>
                         </div>
                     </div>
 
@@ -148,7 +165,6 @@
                                             <button type="button" class="rich-text-btn" onclick="insertTag('structuralAnswerText', 'sub')" title="Subscript">x₂</button>
                                         </div>
                                         <textarea id="structuralAnswerText" rows="4" placeholder="Type the full answer or supporting notes..."></textarea>
-                                        <input type="text" id="structuralAnswerImageUrl" placeholder="Full answer image URL or path (optional)">
                                         <input type="file" id="structuralAnswerImageFile" accept="image/*" class="file-input">
                                         <div style="display:flex;gap:8px;margin-top:8px;">
                                             <button type="button" id="insertStructuralInlineBtn" class="btn btn-secondary btn-sm">Insert image inline</button>

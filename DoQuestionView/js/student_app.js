@@ -450,7 +450,7 @@ function renderStructuralInteraction(container, q) {
             const text = sq.subQuestion || '';
             if (label || text) {
                 const qText = document.createElement('div');
-                qText.innerHTML = `${label}${text}`;
+                qText.innerHTML = `${label}${processQuestionContent(text)}`;
                 qText.style.marginBottom = '10px';
                 wrapper.appendChild(qText);
             }
@@ -604,7 +604,7 @@ function checkAnswer(q) {
                 
                 let answerHtml = `<h4>Your Answer:</h4><p style="margin-bottom:15px;">${highlightedText}</p>`;
                 answerHtml += `<h4>Suggested Answer:</h4>`;
-                answerHtml += `<p style="white-space: pre-wrap;">${sq.subAnswer || 'No answer provided.'}</p>`;
+                answerHtml += `<div>${processQuestionContent(sq.subAnswer || 'No answer provided.')}</div>`;
                 
                 answerDisplay.innerHTML = answerHtml;
                 answerDisplay.style.display = 'block';
@@ -619,7 +619,7 @@ function checkAnswer(q) {
             const mainAnswerDisplay = document.getElementById('structural-answer-display');
             if (mainAnswerDisplay && q.structuralAnswer.fullAnswer) {
                 let mainHtml = `<h4>General Answer / Notes:</h4>`;
-                mainHtml += `<p style="white-space: pre-wrap;">${q.structuralAnswer.fullAnswer}</p>`;
+                mainHtml += `${processQuestionContent(q.structuralAnswer.fullAnswer || '')}`;
                 if (q.structuralAnswer.image) {
                     mainHtml += `<img src="${resolveImageUrl(q.structuralAnswer.image)}" style="max-width:100%; margin-top:10px;">`;
                 }
@@ -648,7 +648,7 @@ function checkAnswer(q) {
             
             if (q.structuralAnswer) {
                 if (q.structuralAnswer.fullAnswer) {
-                    answerHtml += `<p style="white-space: pre-wrap;">${q.structuralAnswer.fullAnswer}</p>`;
+                    answerHtml += `${processQuestionContent(q.structuralAnswer.fullAnswer)}`;
                 }
                 if (q.structuralAnswer.image) {
                     answerHtml += `<img src="${resolveImageUrl(q.structuralAnswer.image)}" style="max-width:100%; margin-top:10px;">`;

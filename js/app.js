@@ -8,6 +8,41 @@ let cachedTopicFiles = {};
 let structuralKeywords = [];
 let questionInlineUploads = {}; // uid -> File
 let structuralInlineUploads = {}; // uid -> File
+let mcqInlineUploads = {}; // uid -> File for MCQ option inline images
+
+// Fixed set of three MCQ templates (global, must be initialized early)
+const MCQ_TEMPLATES = [
+    {
+        id: 'tpl1',
+        name: 'Single-statement combos',
+        options: [
+            '(1) only',
+            '(2) only',
+            '(1) and (3) only',
+            '(2) and (3) only'
+        ]
+    },
+    {
+        id: 'tpl2',
+        name: 'Pair-wise and all',
+        options: [
+            '(1) and (2) only',
+            '(1) and (3) only',
+            '(2) and (3) only',
+            '(1), (2) and (3)'
+        ]
+    },
+    {
+        id: 'tpl3',
+        name: 'Assertion-Reason style',
+        options: [
+            'Both statements are true and the 2nd statement is a correct explanation of the 1st statement',
+            'Both statements are true but the 2nd statement is NOT a correct explanation of the 1st statement',
+            'The 1st statement is false but the 2nd statement is true',
+            'Both statements are false'
+        ]
+    }
+];
 
 // Initialize
 function initApp() {
@@ -58,6 +93,22 @@ function initApp() {
         });
     }
     renderKeywordList();
+    // Prefill GitHub repo URL and token from localStorage (default to Revampes/ChemQuestion)
+    try {
+        const savedRepo = localStorage.getItem('qb_repoUrl') || 'https://github.com/Revampes/ChemQuestion';
+        const savedToken = localStorage.getItem('qb_githubToken') || '';
+        const repoEl = get('repoUrl');
+        const tokenEl = get('githubToken');
+        if (repoEl && !repoEl.value) repoEl.value = savedRepo;
+        if (tokenEl && !tokenEl.value && savedToken) tokenEl.value = savedToken;
+        // Auto-connect if token present
+        if (savedToken) {
+            // Run testConnection to validate and load topics
+            setTimeout(() => {
+                try { window.testConnection(); } catch (e) { console.warn('Auto testConnection failed:', e); }
+            }, 200);
+        }
+    } catch (e) { console.warn('Failed to load saved GitHub credentials:', e); }
     
     // Input listeners for preview
     document.querySelectorAll('#questionForm input, #questionForm select, #questionForm textarea').forEach(element => {
@@ -102,6 +153,10 @@ function initializeMCQ() {
         }
 
         if (isMCQ && mcqOptions && mcqOptions.children.length === 0) {
+            // Default to 4 options (A-D)
+            optionCounter = 0;
+            addMCQOption();
+            addMCQOption();
             addMCQOption();
             addMCQOption();
         }
@@ -119,7 +174,46 @@ function initializeMCQ() {
     });
 
     addOptionBtn.addEventListener('click', addMCQOption);
+    const applyTplBtn = get('applyMCQTemplateBtn');
+    if (applyTplBtn) {
+        applyTplBtn.addEventListener('click', () => {
+            const sel = get('mcqTemplateSelect');
+            if (!sel) return;
+            const id = sel.value;
+            if (!id) return showNotification('Please select a template first', 'warning');
+            applyMCQTemplateById(id);
+        });
+    }
     toggleSections(questionType.value);
+}
+
+
+
+function applyMCQTemplateById(id) {
+    const tpl = MCQ_TEMPLATES.find(t => t.id === id);
+    if (!tpl) return showNotification('Template not found', 'error');
+
+    // Ensure at least 4 option rows
+    const mcqOptions = get('mcqOptions');
+    if (!mcqOptions) return;
+    while (mcqOptions.children.length < 4) {
+        addMCQOption();
+    }
+
+    // Apply template texts to first four options (A-D)
+    const rows = Array.from(mcqOptions.querySelectorAll('.mcq-option'));
+    for (let i = 0; i < 4; i++) {
+        const row = rows[i];
+        if (!row) continue;
+        const textarea = row.querySelector('.mcq-option-input');
+        if (textarea) {
+            textarea.value = tpl.options[i] || '';
+        } else {
+            const input = row.querySelector('.mcq-option-input');
+            if (input) input.value = tpl.options[i] || '';
+        }
+    }
+    updatePreview();
 }
 
 function initializeStructural() {
@@ -170,6 +264,10 @@ function addSubQuestion(data = null) {
                 <button type="button" class="rich-text-btn" onclick="insertTag('suba-${id}', 'sub')">x₂</button>
             </div>
             <textarea id="suba-${id}" class="sub-answer-text" rows="2" style="width:100%;">${answerVal}</textarea>
+            <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+                <input type="file" class="sub-answer-image-file file-input" accept="image/*">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="insertInlineSubImage('suba-${id}')">Insert image inline</button>
+            </div>
         </div>
     `;
     
@@ -201,17 +299,24 @@ function addMCQOption() {
             <span class="option-letter">${optionLetter}.</span>
         </div>
         <div class="mcq-option-body">
-            <input type="text" class="mcq-option-input" placeholder="Option text">
-            <input type="text" class="mcq-option-image-url" placeholder="Image URL or path (optional)">
+            <div class="rich-text-toolbar" style="margin-bottom:6px;">
+                <button type="button" class="rich-text-btn" onclick="insertTag('mcq-opt-${optionCounter}', 'b')">B</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('mcq-opt-${optionCounter}', 'u')">U</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('mcq-opt-${optionCounter}', 'sup')">x²</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('mcq-opt-${optionCounter}', 'sub')">x₂</button>
+            </div>
+            <textarea id="mcq-opt-${optionCounter}" class="mcq-option-input" placeholder="Option text (supports formatting)" rows="2" style="width:100%;"></textarea>
             <input type="file" class="mcq-option-image file-input" accept="image/*">
+            <button type="button" class="btn btn-sm" onclick="insertInlineOptionImage('mcq-opt-${optionCounter}', this)">Insert image inline</button>
         </div>
         <button type="button" class="remove-option" onclick="removeMCQOption(this)">×</button>
     `;
     mcqOptions.appendChild(div);
 
-    div.querySelectorAll('input').forEach(input => {
+    // Wire up events for inputs
+    div.querySelectorAll('input, textarea').forEach(input => {
         input.addEventListener('change', updatePreview);
-        if (input.type !== 'file') {
+        if (input.tagName.toLowerCase() === 'textarea' || input.type === 'text') {
             input.addEventListener('input', updatePreview);
         }
     });
@@ -222,6 +327,8 @@ function addMCQOption() {
     }
     updatePreview();
 }
+
+// removed per-option template helpers (using global fixed templates only)
 
 window.removeMCQOption = function(button) {
     const optionRow = button.closest('.mcq-option');
@@ -334,6 +441,38 @@ function insertStructuralImageInline() {
     updatePreview();
 }
 
+function insertInlineSubImage(textareaId) {
+    const textarea = get(textareaId);
+    if (!textarea) return showNotification('Textarea not found for inline image insertion', 'error');
+    const container = textarea.closest('.sub-question-item');
+    if (!container) return showNotification('Sub-question container not found', 'error');
+    const fileInput = container.querySelector('.sub-answer-image-file');
+    if (!fileInput) return showNotification('Please choose a sub-question image file first', 'error');
+    const file = fileInput.files?.[0];
+    if (!file) return showNotification('No file selected for sub-question image', 'error');
+    const uid = generateInlineUid('simg');
+    structuralInlineUploads[uid] = file;
+    insertAtCursor(textarea, `\n{{INLINE_IMG:${uid}}}\n`);
+    fileInput.value = '';
+    updatePreview();
+}
+
+function insertInlineOptionImage(textareaId, btn) {
+    const textarea = get(textareaId);
+    if (!textarea) return showNotification('Option textarea not found for inline image insertion', 'error');
+    const row = btn.closest('.mcq-option');
+    if (!row) return showNotification('Option row not found', 'error');
+    const fileInput = row.querySelector('.mcq-option-image');
+    if (!fileInput) return showNotification('Please choose an option image file first', 'error');
+    const file = fileInput.files?.[0];
+    if (!file) return showNotification('No file selected for option image', 'error');
+    const uid = generateInlineUid('optimg');
+    mcqInlineUploads[uid] = file;
+    insertAtCursor(textarea, `\n{{INLINE_IMG:${uid}}}\n`);
+    fileInput.value = '';
+    updatePreview();
+}
+
 function renderKeywordList() {
     const list = get('keywordList');
     if (!list) return;
@@ -419,6 +558,12 @@ function handleFormSubmit(event) {
         }
     }
 
+    // Validate question number is integer
+    if (questionData.questionNumber === null || !Number.isInteger(questionData.questionNumber) || questionData.questionNumber <= 0) {
+        showNotification('Please enter a valid question number (positive integer)', 'error');
+        return;
+    }
+
     if (!Number.isInteger(questionData.marks)) {
         showNotification('Please enter marks as a whole number', 'error');
         return;
@@ -442,12 +587,16 @@ function handleFormSubmit(event) {
 
     if (questionData.type === 'Structural question') {
         const structural = questionData.structuralAnswer || {};
-        const hasText = typeof structural.fullAnswer === 'string' && structural.fullAnswer.trim().length > 0;
-        const hasImage = Boolean(structural.image);
-        const hasUpload = Boolean(uploads.structuralAnswer);
-        if (!hasText && !hasImage && !hasUpload) {
-            showNotification('Please provide a full answer text or image for structural questions', 'error');
-            return;
+        const subQs = structural.subQuestions || [];
+        // If there are no sub-questions, require full answer or image; if sub-questions are present, full answer is optional
+        if (!subQs || subQs.length === 0) {
+            const hasText = typeof structural.fullAnswer === 'string' && structural.fullAnswer.trim().length > 0;
+            const hasImage = Boolean(structural.image);
+            const hasUpload = Boolean(uploads.structuralAnswer);
+            if (!hasText && !hasImage && !hasUpload) {
+                showNotification('Please provide a full answer text or image for structural questions (or add sub-questions)', 'error');
+                return;
+            }
         }
     }
 
@@ -463,7 +612,9 @@ function handleFormSubmit(event) {
 function collectQuestionData() {
     const source = get('source').value;
     const year = get('year').value || null;
-    const questionNumber = get('questionNumber').value;
+    const paper = get('paper') ? get('paper').value || null : null;
+    const qnVal = get('questionNumber').value;
+    const questionNumber = qnVal === '' ? null : parseInt(qnVal, 10);
     const type = get('questionType').value;
     const marksValue = parseInt(get('marks').value, 10);
     const marks = Number.isNaN(marksValue) ? null : marksValue;
@@ -474,13 +625,14 @@ function collectQuestionData() {
     return {
         id,
         source,
+        paper,
         year,
         questionNumber,
         type,
         marks,
         topics: getSelectedTopics(), // Names
         question: get('questionText').value,
-        image: get('questionImageUrl').value || null,
+        image: null,
         options: getMCQOptions(),
         correctOption: getCorrectOption(),
         structuralAnswer: isStructural ? getStructuralAnswerData() : null,
@@ -514,11 +666,10 @@ function getMCQOptions() {
     get('mcqOptions').querySelectorAll('.mcq-option').forEach((option, index) => {
         const letter = String.fromCharCode(65 + index);
         const text = option.querySelector('.mcq-option-input').value;
-        const imagePath = option.querySelector('.mcq-option-image-url')?.value || null;
         options.push({
             option: letter,
             content: text,
-            image: imagePath
+            image: null
         });
     });
     return options;
@@ -534,9 +685,8 @@ function getCorrectOption() {
 
 function getStructuralAnswerData() {
     const textField = get('structuralAnswerText');
-    const imageField = get('structuralAnswerImageUrl');
     const fullAnswer = textField ? textField.value : '';
-    const image = imageField && imageField.value ? imageField.value : null;
+    const image = null; // image path/url removed; use file uploads/inline instead
     
     const subQuestions = [];
     const container = get('subQuestionsContainer');
@@ -563,6 +713,8 @@ function collectImageUploads() {
         question: get('questionImageFile')?.files?.[0] || null,
         structuralAnswer: get('structuralAnswerImageFile')?.files?.[0] || null,
         options: {},
+        subAnswers: {},
+        inlineOptions: {...mcqInlineUploads},
         inlineQuestion: {...questionInlineUploads},
         inlineStructural: {...structuralInlineUploads}
     };
@@ -572,6 +724,15 @@ function collectImageUploads() {
         const fileInput = option.querySelector('.mcq-option-image');
         if (fileInput && fileInput.files && fileInput.files[0]) {
             uploads.options[index] = fileInput.files[0];
+        }
+    });
+
+    // Collect sub-question image files
+    const subItems = get('subQuestionsContainer')?.querySelectorAll('.sub-question-item') || [];
+    subItems.forEach((item, idx) => {
+        const fileInput = item.querySelector('.sub-answer-image-file');
+        if (fileInput && fileInput.files && fileInput.files[0]) {
+            uploads.subAnswers[idx] = fileInput.files[0];
         }
     });
 
@@ -633,6 +794,48 @@ async function applyImageUploads(question, uploads, topicFile) {
             if (typeof question.structuralAnswer.fullAnswer === 'string') {
                 question.structuralAnswer.fullAnswer = question.structuralAnswer.fullAnswer.split(placeholder).join(`![](${uploadedPath})`);
             }
+        }
+    }
+
+    // Replace inline placeholders in sub-question answers
+    if (uploads.inlineStructural && question.structuralAnswer && Array.isArray(question.structuralAnswer.subQuestions)) {
+        for (const [uid, file] of Object.entries(uploads.inlineStructural)) {
+            if (!file) continue;
+            const uploadedPath = await uploadSingleImage(file, question.id, `inline-s-${uid}`, folder);
+            const placeholder = `{{INLINE_IMG:${uid}}}`;
+            question.structuralAnswer.subQuestions.forEach((sq) => {
+                if (typeof sq.subAnswer === 'string') {
+                    sq.subAnswer = sq.subAnswer.split(placeholder).join(`![](${uploadedPath})`);
+                }
+            });
+        }
+    }
+
+    // Upload explicit sub-question image files (uploads.subAnswers keyed by index)
+    if (uploads.subAnswers && question.structuralAnswer && Array.isArray(question.structuralAnswer.subQuestions)) {
+        for (const [indexStr, file] of Object.entries(uploads.subAnswers)) {
+            const idx = parseInt(indexStr, 10);
+            if (Number.isNaN(idx) || !question.structuralAnswer.subQuestions[idx]) continue;
+            const uploadedPath = await uploadSingleImage(file, question.id, `subq${idx+1}`, folder);
+            // Append the uploaded image to the subAnswer field (so it renders via processQuestionContent)
+            const sq = question.structuralAnswer.subQuestions[idx];
+            const existing = typeof sq.subAnswer === 'string' ? sq.subAnswer : '';
+            // Add newline image at end
+            sq.subAnswer = (existing.trim() ? existing + '\n' : '') + `![](${uploadedPath})`;
+        }
+    }
+
+    // Handle inline option images (uploads.inlineOptions)
+    if (uploads.inlineOptions && question.options && Array.isArray(question.options)) {
+        for (const [uid, file] of Object.entries(uploads.inlineOptions)) {
+            if (!file) continue;
+            const uploadedPath = await uploadSingleImage(file, question.id, `inline-opt-${uid}`, folder);
+            const placeholder = `{{INLINE_IMG:${uid}}}`;
+            question.options.forEach(opt => {
+                if (typeof opt.content === 'string') {
+                    opt.content = opt.content.split(placeholder).join(`![](${uploadedPath})`);
+                }
+            });
         }
     }
 
@@ -903,7 +1106,6 @@ window.editQuestion = function(file, index) {
     const parsedMarks = Number.parseInt(question.marks, 10);
     get('marks').value = Number.isNaN(parsedMarks) ? '' : parsedMarks;
     get('questionText').value = question.question;
-    get('questionImageUrl').value = question.image || '';
     
     // Trigger change events
     get('questionType').dispatchEvent(new Event('change'));
@@ -916,8 +1118,7 @@ window.editQuestion = function(file, index) {
             addMCQOption();
             const inputs = get('mcqOptions').querySelectorAll('.mcq-option-input');
             inputs[inputs.length - 1].value = opt.content;
-            const imageInputs = get('mcqOptions').querySelectorAll('.mcq-option-image-url');
-            imageInputs[imageInputs.length - 1].value = opt.image || '';
+            // option image is handled via file uploads or inline images; no URL field
         });
         if (question.correctOption) {
             const normalizedOption = question.correctOption.toString().toUpperCase();
@@ -932,13 +1133,11 @@ window.editQuestion = function(file, index) {
     }
 
     const structuralText = get('structuralAnswerText');
-    const structuralImageUrl = get('structuralAnswerImageUrl');
     const subQContainer = get('subQuestionsContainer');
 
     if (normalizedType === 'Structural question') {
         const structural = question.structuralAnswer || {};
         if (structuralText) structuralText.value = structural.fullAnswer || '';
-        if (structuralImageUrl) structuralImageUrl.value = structural.image || '';
         structuralKeywords = Array.isArray(structural.keywords) ? [...structural.keywords] : [];
         
         if (subQContainer) {
@@ -1115,6 +1314,11 @@ window.testConnection = async function() {
             // store locally for quick access (optional)
             window.currentFiles = files;
             cachedTopicFiles = files;
+            // Save credentials locally for convenience (so page can prefill on reload)
+            try {
+                localStorage.setItem('qb_repoUrl', repoUrl);
+                localStorage.setItem('qb_githubToken', token);
+            } catch (e) { console.warn('Failed to save GitHub credentials locally:', e); }
         } catch (err) {
             console.warn('Failed to load existing topics after connect:', err);
         }

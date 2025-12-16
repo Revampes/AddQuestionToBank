@@ -39,8 +39,9 @@ function populateManagerSelect() {
 function formatQuestionId(q) {
     const src = (q.source || '').toString().trim() || 'Unknown';
     const yr = (q.year || '').toString().trim() || '----';
+    const paper = (q.paper || '').toString().trim();
     const num = (q.questionNumber || '').toString().trim() || '';
-    return `[${src}][${yr}][${num}]`;
+    return paper ? `[${src}][${yr}][${paper}][${num}]` : `[${src}][${yr}][${num}]`;
 }
 
 function renderQueue(queue) {
