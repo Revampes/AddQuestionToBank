@@ -13,6 +13,7 @@ let structuralInlineUploads = {}; // uid -> File
 function initApp() {
     initializeTopics();
     initializeMCQ();
+    initializeStructural();
     
     // Event Listeners
     get('questionForm').addEventListener('submit', handleFormSubmit);
@@ -121,6 +122,71 @@ function initializeMCQ() {
     toggleSections(questionType.value);
 }
 
+function initializeStructural() {
+    const addSubQuestionBtn = get('addSubQuestionBtn');
+    if (addSubQuestionBtn) {
+        addSubQuestionBtn.addEventListener('click', () => addSubQuestion());
+    }
+}
+
+function addSubQuestion(data = null) {
+    const container = get('subQuestionsContainer');
+    if (!container) return;
+    
+    const id = Date.now() + Math.random().toString(36).substr(2, 9);
+    const div = document.createElement('div');
+    div.className = 'sub-question-item';
+    div.style.cssText = 'border: 1px solid #3a3f47; padding: 10px; margin-bottom: 10px; background: #4a5568; border-radius: 4px; position: relative;';
+    div.dataset.id = id;
+    
+    const labelVal = data ? data.subLabel : '';
+    const questionVal = data ? data.subQuestion : '';
+    const answerVal = data ? data.subAnswer : '';
+    
+    div.innerHTML = `
+        <button type="button" class="remove-option" onclick="removeSubQuestion(this)" style="position:absolute; top:5px; right:5px; background:none; border:none; font-size:1.2em; cursor:pointer;">×</button>
+        <div style="display:flex; gap:10px; margin-bottom:8px;">
+            <div style="width:80px;">
+                <label style="font-size:0.8em; display:block;">Label</label>
+                <input type="text" class="sub-label" placeholder="a, b, i..." value="${labelVal}" style="width:100%; padding:4px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:0.8em; display:block;">Sub-question Text</label>
+                <div class="rich-text-toolbar" style="margin-bottom:2px;">
+                    <button type="button" class="rich-text-btn" onclick="insertTag('subq-${id}', 'b')">B</button>
+                    <button type="button" class="rich-text-btn" onclick="insertTag('subq-${id}', 'u')">U</button>
+                    <button type="button" class="rich-text-btn" onclick="insertTag('subq-${id}', 'sup')">x²</button>
+                    <button type="button" class="rich-text-btn" onclick="insertTag('subq-${id}', 'sub')">x₂</button>
+                </div>
+                <textarea id="subq-${id}" class="sub-question-text" rows="2" style="width:100%;">${questionVal}</textarea>
+            </div>
+        </div>
+        <div>
+            <label style="font-size:0.8em; display:block;">Answer</label>
+            <div class="rich-text-toolbar" style="margin-bottom:2px;">
+                <button type="button" class="rich-text-btn" onclick="insertTag('suba-${id}', 'b')">B</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('suba-${id}', 'u')">U</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('suba-${id}', 'sup')">x²</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('suba-${id}', 'sub')">x₂</button>
+            </div>
+            <textarea id="suba-${id}" class="sub-answer-text" rows="2" style="width:100%;">${answerVal}</textarea>
+        </div>
+    `;
+    
+    container.appendChild(div);
+    
+    div.querySelectorAll('input, textarea').forEach(el => {
+        el.addEventListener('input', updatePreview);
+    });
+    
+    updatePreview();
+}
+
+window.removeSubQuestion = function(btn) {
+    btn.closest('.sub-question-item').remove();
+    updatePreview();
+}
+
 function addMCQOption() {
     const mcqOptions = get('mcqOptions');
     if (!mcqOptions) return;
@@ -198,6 +264,35 @@ function addKeywordFromInput() {
 
 function generateInlineUid(prefix) {
     return `${prefix}_${Date.now()}_${Math.floor(Math.random()*10000)}`;
+}
+
+window.insertTag = function(elementId, tag) {
+    const textarea = get(elementId);
+    if (!textarea) return;
+    
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = textarea.value.substring(start, end);
+    
+    const replacement = `<${tag}>${selectedText}</${tag}>`;
+    
+    const before = textarea.value.substring(0, start);
+    const after = textarea.value.substring(end);
+    
+    textarea.value = before + replacement + after;
+    
+    // Restore selection or place cursor inside tag if empty
+    if (selectedText.length > 0) {
+        textarea.selectionStart = start;
+        textarea.selectionEnd = start + replacement.length;
+    } else {
+        // Cursor between tags
+        const newPos = start + tag.length + 2; // <tag> is length+2
+        textarea.selectionStart = newPos;
+        textarea.selectionEnd = newPos;
+    }
+    
+    updatePreview();
 }
 
 function insertAtCursor(textarea, text) {
@@ -280,7 +375,7 @@ function handleFormSubmit(event) {
         return;
     }
 
-    // Prevent duplicates for certain official sources (DSE, AL, CE):
+    // Prevent duplicates for certain official sources (DSE, AL, CE) when adding new questions:
     // Do not allow adding a question with the same source+year+questionNumber
     // to any selected topic if that combination already exists in the repo or queue.
     const DUP_SOURCES = ['DSE', 'AL', 'CE'];
@@ -315,10 +410,13 @@ function handleFormSubmit(event) {
         return dupFiles;
     }
 
-    const duplicateFiles = findDuplicatesForFiles(questionData, selectedFiles);
-    if (duplicateFiles.length > 0) {
-        showNotification(`Duplicate found for ${questionData.source} ${questionData.year} ${questionData.questionNumber} in: ${duplicateFiles.join(', ')}`, 'error');
-        return;
+    // Only check duplicates when adding a new question (not when editing an existing one)
+    if (editingIndex < 0) {
+        const duplicateFiles = findDuplicatesForFiles(questionData, selectedFiles);
+        if (duplicateFiles.length > 0) {
+            showNotification(`Duplicate found for ${questionData.source} ${questionData.year} ${questionData.questionNumber} in: ${duplicateFiles.join(', ')}`, 'error');
+            return;
+        }
     }
 
     if (!Number.isInteger(questionData.marks)) {
@@ -439,10 +537,24 @@ function getStructuralAnswerData() {
     const imageField = get('structuralAnswerImageUrl');
     const fullAnswer = textField ? textField.value : '';
     const image = imageField && imageField.value ? imageField.value : null;
+    
+    const subQuestions = [];
+    const container = get('subQuestionsContainer');
+    if (container) {
+        container.querySelectorAll('.sub-question-item').forEach(item => {
+            subQuestions.push({
+                subLabel: item.querySelector('.sub-label').value,
+                subQuestion: item.querySelector('.sub-question-text').value,
+                subAnswer: item.querySelector('.sub-answer-text').value
+            });
+        });
+    }
+
     return {
         fullAnswer,
         image,
-        keywords: structuralKeywords.slice()
+        keywords: structuralKeywords.slice(),
+        subQuestions: subQuestions.length > 0 ? subQuestions : undefined
     };
 }
 
@@ -821,15 +933,25 @@ window.editQuestion = function(file, index) {
 
     const structuralText = get('structuralAnswerText');
     const structuralImageUrl = get('structuralAnswerImageUrl');
+    const subQContainer = get('subQuestionsContainer');
+
     if (normalizedType === 'Structural question') {
         const structural = question.structuralAnswer || {};
         if (structuralText) structuralText.value = structural.fullAnswer || '';
         if (structuralImageUrl) structuralImageUrl.value = structural.image || '';
         structuralKeywords = Array.isArray(structural.keywords) ? [...structural.keywords] : [];
+        
+        if (subQContainer) {
+            subQContainer.innerHTML = '';
+            if (structural.subQuestions && Array.isArray(structural.subQuestions)) {
+                structural.subQuestions.forEach(sq => addSubQuestion(sq));
+            }
+        }
     } else {
         if (structuralText) structuralText.value = '';
         if (structuralImageUrl) structuralImageUrl.value = '';
         structuralKeywords = [];
+        if (subQContainer) subQContainer.innerHTML = '';
     }
     renderKeywordList();
     const structuralFileInput = get('structuralAnswerImageFile');
@@ -940,6 +1062,11 @@ function resetFormFields() {
         mcqContainer.innerHTML = '';
     }
     optionCounter = 0;
+
+    const subQContainer = get('subQuestionsContainer');
+    if (subQContainer) {
+        subQContainer.innerHTML = '';
+    }
 
     structuralKeywords = [];
     renderKeywordList();

@@ -13,7 +13,7 @@ body {
 }
 
 .container {
-    max-width: 1400px;
+    max-width: 95vw;
     margin: 0 auto;
     background: #2d3748;
     border-radius: 15px;
@@ -396,6 +396,39 @@ textarea:focus {
 
 .notification.warning {
     background: #ed8936;
+}
+
+/* Sub-question styling (developer + student views) */
+.sub-questions-manager,
+.sub-question-item,
+.sub-question-wrapper {
+    background: #4a5568; /* match .form-section */
+    color: #e2e8f0;
+    border: 1px solid #3a3f47;
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.sub-questions-manager label {
+    color: #e2e8f0;
+}
+
+.sub-question-item input,
+.sub-question-item textarea,
+.sub-question-wrapper input,
+.sub-question-wrapper textarea,
+.sub-questions-manager input,
+.sub-questions-manager textarea {
+    background: #2d3748; /* dark inputs */
+    color: #e2e8f0;
+    border: 1px solid #4a5568;
+}
+
+.sub-question-item .rich-text-toolbar,
+.sub-question-wrapper .rich-text-toolbar,
+.sub-questions-manager .rich-text-toolbar {
+    background: transparent;
+    padding: 4px 0 8px 0;
 }
 
 .progress-bar {

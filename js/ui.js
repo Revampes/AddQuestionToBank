@@ -35,6 +35,14 @@ function populateManagerSelect() {
     }
 }
 
+// Format question ID as [source][year][questionNumber]
+function formatQuestionId(q) {
+    const src = (q.source || '').toString().trim() || 'Unknown';
+    const yr = (q.year || '').toString().trim() || '----';
+    const num = (q.questionNumber || '').toString().trim() || '';
+    return `[${src}][${yr}][${num}]`;
+}
+
 function renderQueue(queue) {
     const container = get('queueList');
     const countBadge = get('queueCount');
@@ -121,7 +129,7 @@ function renderQuestionList(questions, topicFile) {
         
         tr.innerHTML = `
             <td><input type="checkbox" class="question-select" value="${index}"></td>
-            <td>${q.questionNumber}</td>
+            <td>${formatQuestionId(q)}</td>
             <td>${Number.isNaN(marksValue) ? '-' : marksValue}</td>
             <td>${q.question.substring(0, 100)}${q.question.length > 100 ? '...' : ''}</td>
             <td><span class="badge ${typeClass}">${typeLabel}</span></td>

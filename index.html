@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GitHub Question Manager</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/rich_text.css">
 </head>
 <body>
     <div id="notification" class="notification"></div>
@@ -110,6 +111,12 @@
                     
                     <div class="form-group">
                         <label for="questionText" class="required">Question Text</label>
+                        <div class="rich-text-toolbar" id="questionTextToolbar">
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'b')" title="Bold">B</button>
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'u')" title="Underline">U</button>
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'sup')" title="Superscript">x²</button>
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'sub')" title="Subscript">x₂</button>
+                        </div>
                         <textarea id="questionText" rows="30" required placeholder="Enter the question text..."></textarea>
                     </div>
                     
@@ -125,7 +132,21 @@
 
                                     <!-- Structural Answer block placed after question fields as requested -->
                                     <div class="form-group" id="structuralSection" style="display: none;">
-                                        <label for="structuralAnswerText">Full Answer</label>
+                                        <div class="sub-questions-manager" style="margin-bottom: 20px; padding: 15px; background-color: #2d3748; border-radius: 6px;">
+                                            <label style="display:block; margin-bottom:10px; font-weight:600;">Sub-questions</label>
+                                            <div id="subQuestionsContainer">
+                                                <!-- Sub-questions added here -->
+                                            </div>
+                                            <button type="button" id="addSubQuestionBtn" class="btn btn-secondary btn-sm" style="margin-top: 10px;">+ Add Sub-question</button>
+                                        </div>
+
+                                        <label for="structuralAnswerText">Full Answer (General / Main)</label>
+                                        <div class="rich-text-toolbar" id="structuralAnswerTextToolbar">
+                                            <button type="button" class="rich-text-btn" onclick="insertTag('structuralAnswerText', 'b')" title="Bold">B</button>
+                                            <button type="button" class="rich-text-btn" onclick="insertTag('structuralAnswerText', 'u')" title="Underline">U</button>
+                                            <button type="button" class="rich-text-btn" onclick="insertTag('structuralAnswerText', 'sup')" title="Superscript">x²</button>
+                                            <button type="button" class="rich-text-btn" onclick="insertTag('structuralAnswerText', 'sub')" title="Subscript">x₂</button>
+                                        </div>
                                         <textarea id="structuralAnswerText" rows="4" placeholder="Type the full answer or supporting notes..."></textarea>
                                         <input type="text" id="structuralAnswerImageUrl" placeholder="Full answer image URL or path (optional)">
                                         <input type="file" id="structuralAnswerImageFile" accept="image/*" class="file-input">
