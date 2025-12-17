@@ -847,7 +847,9 @@ async function uploadSingleImage(file, questionId, suffix, folder) {
     const ext = getFileExtension(file.name);
     const safeId = slugifyFileComponent(questionId);
     const safeSuffix = slugifyFileComponent(suffix);
-    const fileName = `${safeId}-${safeSuffix}${ext}`;
+    // Add a small unique token to filename to avoid accidental overwrites when IDs collide
+    const uniq = Date.now().toString(36) + '-' + Math.floor(Math.random() * 10000);
+    const fileName = `${safeId}-${safeSuffix}-${uniq}${ext}`;
     const relativePath = `images/${folder}/${fileName}`;
     await createOrUpdateFile(
         relativePath,
