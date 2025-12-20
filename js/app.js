@@ -9,6 +9,7 @@ let structuralKeywords = [];
 let questionInlineUploads = {}; // uid -> File
 let structuralInlineUploads = {}; // uid -> File
 let mcqInlineUploads = {}; // uid -> File for MCQ option inline images
+let lastAIParseResult = null;
 
 // Fixed set of three MCQ templates (global, must be initialized early)
 const MCQ_TEMPLATES = [
@@ -69,6 +70,14 @@ function initApp() {
             addKeywordFromInput();
         });
     }
+    const parserBtn = get('runQuestionParserBtn');
+    if (parserBtn) {
+        parserBtn.addEventListener('click', handleAutoParseClick);
+    }
+    const parserInput = get('aiRawQuestionInput');
+    if (parserInput) {
+        parserInput.addEventListener('input', () => setParserStatus('Ready to analyze your latest paste.'));
+    }
     const insertQuestionInlineBtn = get('insertQuestionInlineBtn');
     if (insertQuestionInlineBtn) {
         insertQuestionInlineBtn.addEventListener('click', (e) => {
@@ -119,6 +128,7 @@ function initApp() {
     // Initial Status
     get('connectionStatus').className = 'status-dot offline';
     get('connectionText').textContent = 'Disconnected from GitHub';
+    resetParserUI();
 }
 
 if (document.readyState === 'loading') {
@@ -150,6 +160,25 @@ function initializeMCQ() {
         }
         if (structuralSection) {
             structuralSection.style.display = isStructural ? 'block' : 'none';
+        }
+
+        // When switching to MCQ for a new question, provide sensible defaults
+        if (isMCQ && editingIndex < 0) {
+            try {
+                const marksEl = get('marks');
+                const paperEl = get('paper');
+                if (marksEl && (marksEl.value === '' || marksEl.value === null || typeof marksEl.value === 'undefined')) {
+                    marksEl.value = 1;
+                }
+                if (paperEl && (paperEl.value === '' || paperEl.value === null || typeof paperEl.value === 'undefined')) {
+                    // default to Paper 1A when MCQ selected
+                    // ensure option exists before assigning
+                    const opt = Array.from(paperEl.options).find(o => o.value === '1A');
+                    if (opt) paperEl.value = '1A';
+                }
+            } catch (e) {
+                console.warn('Failed to apply MCQ defaults:', e);
+            }
         }
 
         if (isMCQ && mcqOptions && mcqOptions.children.length === 0) {
@@ -899,6 +928,324 @@ function updatePreview() {
     get('jsonPreview').textContent = JSON.stringify(questionData, null, 2);
 }
 
+async function handleAutoParseClick(event) {
+    if (event) {
+        event.preventDefault();
+    }
+    const input = get('aiRawQuestionInput');
+    const button = get('runQuestionParserBtn');
+    if (!input) {
+        return;
+    }
+    const rawText = input.value.trim();
+    if (!rawText) {
+        showNotification('Paste a raw question before running the parser', 'warning');
+        setParserStatus('Waiting for input...');
+        return;
+    }
+    if (!window.questionAI) {
+        showNotification('Parser module not loaded yet. Please refresh the page.', 'error');
+        return;
+    }
+    setParserStatus('Analyzing question...');
+    if (button) {
+        button.disabled = true;
+        button.dataset.originalLabel = button.dataset.originalLabel || button.textContent;
+        button.textContent = 'Analyzing...';
+    }
+    try {
+        const result = await window.questionAI.analyze(rawText);
+        lastAIParseResult = result;
+        applyAIParseResult(result);
+        const topicLabel = result.topicName ? `Detected topic: ${result.topicName}` : 'Analysis complete';
+        const datasetLabel = result.matchedDatasetId ? `matched ${result.matchedDatasetId}` : 'no dataset match yet';
+        setParserStatus(`${topicLabel} (${datasetLabel})`);
+        showNotification('Fields auto-filled from QuestionBankLLM');
+    } catch (error) {
+        console.error('Parser error:', error);
+        showNotification(`Parser error: ${error.message}`, 'error');
+        setParserStatus('Parser error. Please check the text and try again.');
+    } finally {
+        if (button) {
+            button.textContent = button.dataset.originalLabel || 'Analyze & Autofill';
+            button.disabled = false;
+        }
+    }
+}
+
+function applyAIParseResult(result) {
+    if (!result) {
+        return;
+    }
+
+    if (result.source) {
+        setSelectValue('source', result.source);
+    }
+    if (get('year') && result.year !== null && result.year !== undefined) {
+        const parsedYear = parseInt(result.year, 10);
+        if (!Number.isNaN(parsedYear)) {
+            get('year').value = parsedYear;
+        }
+    }
+    if (result.paper) {
+        setSelectValue('paper', result.paper);
+    }
+    if (result.questionNumber && get('questionNumber')) {
+        const parsedNumber = parseInt(result.questionNumber, 10);
+        if (!Number.isNaN(parsedNumber)) {
+            get('questionNumber').value = parsedNumber;
+        }
+    }
+    if (result.marks !== null && result.marks !== undefined && get('marks')) {
+        const parsedMarks = parseInt(result.marks, 10);
+        if (!Number.isNaN(parsedMarks)) {
+            get('marks').value = parsedMarks;
+        }
+    }
+
+    const typeSelect = get('questionType');
+    const derivedType = determineQuestionType(result);
+    if (typeSelect) {
+        typeSelect.value = derivedType;
+        typeSelect.dispatchEvent(new Event('change'));
+    }
+
+    const questionTextArea = get('questionText');
+    if (questionTextArea) {
+        questionTextArea.value = result.prompt || result.rawPrompt || questionTextArea.value;
+    }
+
+    if (derivedType === 'Multiple-choice') {
+        populateMCQOptionsFromAI(result.answerOptions);
+        setCorrectOptionSelection(result.correctOption);
+    } else {
+        populateStructuralFromAI(result.structuredAnswer);
+    }
+
+    selectTopicsFromAI(result);
+    setChatPromptOutput(buildChatPromptText(result));
+    updateParserMeta(result);
+    updatePreview();
+}
+
+function determineQuestionType(result) {
+    if (result.questionType) {
+        return result.questionType === 'Multiple-choice' ? 'Multiple-choice' : 'Structural question';
+    }
+    const hasOptions = Array.isArray(result.answerOptions) && result.answerOptions.length >= 2;
+    return hasOptions ? 'Multiple-choice' : 'Structural question';
+}
+
+function setSelectValue(selectId, value) {
+    const select = get(selectId);
+    if (!select || value === null || value === undefined) {
+        return;
+    }
+    const normalized = value.toString().trim().toLowerCase();
+    const option = Array.from(select.options).find(opt => opt.value.toLowerCase() === normalized);
+    if (option) {
+        select.value = option.value;
+    } else if (selectId === 'source') {
+        select.value = 'Others';
+    }
+}
+
+function populateMCQOptionsFromAI(options) {
+    const container = get('mcqOptions');
+    if (!container) {
+        return;
+    }
+    container.innerHTML = '';
+    optionCounter = 0;
+    const safeOptions = Array.isArray(options) && options.length > 0 ? options : [];
+    if (safeOptions.length === 0) {
+        addMCQOption();
+        addMCQOption();
+        return;
+    }
+    safeOptions.forEach(opt => {
+        addMCQOption();
+        const rows = container.querySelectorAll('.mcq-option');
+        const currentRow = rows[rows.length - 1];
+        if (!currentRow) {
+            return;
+        }
+        const textarea = currentRow.querySelector('.mcq-option-input');
+        if (textarea) {
+            textarea.value = opt.text || '';
+        }
+        const labelLetter = (opt.label || '').toString().trim().toUpperCase();
+        if (labelLetter) {
+            const labelEl = currentRow.querySelector('.option-letter');
+            if (labelEl) {
+                labelEl.textContent = `${labelLetter}.`;
+            }
+            const radio = currentRow.querySelector('.correct-option-radio');
+            if (radio) {
+                radio.value = labelLetter;
+            }
+        }
+    });
+}
+
+function setCorrectOptionSelection(letter) {
+    if (!letter) {
+        return;
+    }
+    const normalized = letter.toString().trim().toUpperCase();
+    const radio = document.querySelector(`input[name="correctOption"][value="${normalized}"]`);
+    if (radio) {
+        radio.checked = true;
+    }
+}
+
+function populateStructuralFromAI(structuredAnswer) {
+    const structuralText = get('structuralAnswerText');
+    const container = get('subQuestionsContainer');
+    if (structuralText) {
+        if (!structuredAnswer) {
+            structuralText.value = structuralText.value || '';
+        } else if (typeof structuredAnswer === 'string') {
+            structuralText.value = structuredAnswer;
+        } else {
+            structuralText.value = structuredAnswer.fullAnswer || structuredAnswer.text || '';
+        }
+    }
+    if (structuredAnswer && Array.isArray(structuredAnswer.keywords)) {
+        structuralKeywords = structuredAnswer.keywords.slice();
+    } else {
+        structuralKeywords = [];
+    }
+    renderKeywordList();
+    if (container) {
+        container.innerHTML = '';
+        if (structuredAnswer && Array.isArray(structuredAnswer.subQuestions)) {
+            structuredAnswer.subQuestions.forEach(sub => addSubQuestion(sub));
+        }
+    }
+}
+
+function selectTopicsFromAI(result) {
+    const names = [];
+    if (result.topicName) {
+        names.push(result.topicName);
+    }
+    if (Array.isArray(result.datasetTopics)) {
+        result.datasetTopics.forEach(name => {
+            if (name) {
+                names.push(name);
+            }
+        });
+    }
+    if (names.length === 0) {
+        return;
+    }
+    const targets = new Set(names.map(name => name.toLowerCase()));
+    const checkboxes = Array.from(document.querySelectorAll('#topicCheckboxes input'));
+    const hasMatch = checkboxes.some(cb => {
+        const topic = TOPICS.find(t => t.file === cb.value);
+        return topic && targets.has(topic.name.toLowerCase());
+    });
+    if (!hasMatch) {
+        return;
+    }
+    checkboxes.forEach(cb => {
+        const topic = TOPICS.find(t => t.file === cb.value);
+        cb.checked = Boolean(topic && targets.has(topic.name.toLowerCase()));
+    });
+}
+
+function buildChatPromptText(result) {
+    const lines = [];
+    const headerParts = [];
+    if (result.source) {
+        headerParts.push(`Source: ${result.source}`);
+    }
+    if (result.year) {
+        headerParts.push(`Year: ${result.year}`);
+    }
+    if (result.questionNumber) {
+        headerParts.push(`Question #: ${result.questionNumber}`);
+    }
+    if (headerParts.length) {
+        lines.push(headerParts.join(' | '));
+    }
+    lines.push(`Topic: ${result.topicName || 'Unknown'}`);
+    if (result.questionType) {
+        lines.push(`Type: ${result.questionType}`);
+    }
+    if (result.correctOption) {
+        const suffix = result.correctOptionText ? ` (${result.correctOptionText})` : '';
+        lines.push(`Detected answer: ${result.correctOption}${suffix}`);
+    }
+    lines.push('');
+    lines.push(result.prompt || result.rawPrompt || '');
+    if (Array.isArray(result.answerOptions) && result.answerOptions.length > 0) {
+        lines.push('');
+        lines.push('Options:');
+        result.answerOptions.forEach(opt => {
+            lines.push(`${opt.label}. ${opt.text}`);
+        });
+    }
+    return lines.join('\n').trim();
+}
+
+function setChatPromptOutput(text) {
+    const output = get('chatPromptOutput');
+    if (!output) {
+        return;
+    }
+    output.value = text || '';
+}
+
+function updateParserMeta(result) {
+    const meta = get('parserMeta');
+    if (!meta) {
+        return;
+    }
+    const details = [];
+    if (result.matchedDatasetId) {
+        details.push(`Dataset: ${result.matchedDatasetId}`);
+    }
+    if (typeof result.matchConfidence === 'number') {
+        details.push(`Similarity ${result.matchConfidence.toFixed(3)}`);
+    }
+    if (result.datasetTopics && result.datasetTopics.length > 0) {
+        details.push(`Topics: ${result.datasetTopics.join(', ')}`);
+    }
+    if (details.length === 0) {
+        details.push('No dataset match yet. Connect to GitHub and sync topics for better suggestions.');
+    }
+    meta.textContent = details.join(' • ');
+}
+
+function setParserStatus(message) {
+    const statusEl = get('parserStatusText');
+    if (!statusEl) {
+        return;
+    }
+    statusEl.textContent = message;
+}
+
+function refreshQuestionAIFromCache() {
+    if (window.questionAI && cachedTopicFiles) {
+        window.questionAI.setDatasetFromCache(cachedTopicFiles);
+    }
+}
+
+function resetParserUI() {
+    setChatPromptOutput('');
+    setParserStatus('Paste a raw question and click "Analyze".');
+    const meta = get('parserMeta');
+    if (meta) {
+        meta.textContent = '';
+    }
+    const input = get('aiRawQuestionInput');
+    if (input) {
+        input.value = '';
+    }
+}
+
 // Queue Management
 function addToQueue(questionData, files, uploads) {
     // Add a copy of the question for each topic file it belongs to
@@ -982,6 +1329,7 @@ async function syncQueue() {
             const freshFiles = await loadExistingTopics();
             // Merge freshFiles into cache (freshFiles may contain parsed content)
             cachedTopicFiles = { ...cachedTopicFiles, ...freshFiles };
+            refreshQuestionAIFromCache();
             // Ensure manager select has options (in case it was cleared)
             if (typeof populateManagerSelect === 'function') {
                 populateManagerSelect();
@@ -1079,6 +1427,7 @@ async function deleteSelectedQuestions() {
             sha: newSha,
             content: currentTopicData.content
         };
+        refreshQuestionAIFromCache();
         updateFileStatus(cachedTopicFiles);
         renderQuestionList(currentTopicData.content.questions, currentTopicData.file);
         updateProgress(100, 'Questions deleted!');
@@ -1207,6 +1556,7 @@ async function saveEditedQuestion(questionData, uploads) {
             sha: newSha,
             content: currentTopicData.content
         };
+        refreshQuestionAIFromCache();
         updateFileStatus(cachedTopicFiles);
         
         updateProgress(100, 'Question updated!');
@@ -1280,6 +1630,8 @@ function resetFormFields() {
     if (questionTypeSelect) {
         questionTypeSelect.dispatchEvent(new Event('change'));
     }
+
+    resetParserUI();
 }
 
 function finishEditingState() {
@@ -1316,6 +1668,7 @@ window.testConnection = async function() {
             // store locally for quick access (optional)
             window.currentFiles = files;
             cachedTopicFiles = files;
+            refreshQuestionAIFromCache();
             // Save credentials locally for convenience (so page can prefill on reload)
             try {
                 localStorage.setItem('qb_repoUrl', repoUrl);

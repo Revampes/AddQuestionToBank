@@ -128,6 +128,22 @@
                     </div>
                     
                     <div class="form-group">
+                        <label for="aiRawQuestionInput">AI Question Parser</label>
+                        <textarea id="aiRawQuestionInput" rows="10" placeholder="Paste the full exam question including header, prompt, and MCQ options."></textarea>
+                        <div class="toolbar" style="justify-content: flex-start; gap: 12px; margin-top: 8px;">
+                            <button type="button" id="runQuestionParserBtn" class="btn btn-secondary btn-sm">✨ Analyze &amp; Autofill</button>
+                            <span class="hint" id="parserStatusText">Paste a raw question and click "Analyze".</span>
+                        </div>
+                        <div class="hint">Powered by QuestionBankLLM - automatically predicts source, year, topics, type, and answers.</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="chatPromptOutput">Chat Prompt Preview</label>
+                        <textarea id="chatPromptOutput" rows="8" placeholder="Run the parser to generate a clean prompt and options for chat tools." readonly></textarea>
+                        <div class="hint" id="parserMeta"></div>
+                    </div>
+                    
+                    <div class="form-group">
                         <label for="questionText" class="required">Question Text</label>
                         <div class="rich-text-toolbar" id="questionTextToolbar">
                             <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'b')" title="Bold">B</button>
@@ -266,6 +282,7 @@
     <script src="js/utils.js"></script>
     <script src="js/github.js"></script>
     <script src="js/ui.js"></script>
+    <script src="js/parser.js"></script>
     <!-- Loader that appends a cache-busting timestamp to ensure latest files are fetched -->
     <script>
         (function loadScriptsSequentially(files) {
@@ -281,7 +298,7 @@
                     document.body.appendChild(s);
                 }
                 loadNext(0);
-        })(['js/config.js','js/utils.js','js/github.js','js/ui.js','js/app.js']);
+        })(['js/config.js','js/utils.js','js/github.js','js/ui.js','js/parser.js','js/app.js']);
     </script>
 </body>
 </html>
