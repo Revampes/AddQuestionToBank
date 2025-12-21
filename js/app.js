@@ -1023,8 +1023,6 @@ function applyAIParseResult(result) {
     }
 
     selectTopicsFromAI(result);
-    setChatPromptOutput(buildChatPromptText(result));
-    updateParserMeta(result);
     updatePreview();
 }
 
@@ -1191,32 +1189,20 @@ function buildChatPromptText(result) {
 }
 
 function setChatPromptOutput(text) {
-    const output = get('chatPromptOutput');
-    if (!output) {
-        return;
-    }
-    output.value = text || '';
+    // Chat prompt preview was removed from the UI; keep this function as a no-op
+    return;
 }
 
 function updateParserMeta(result) {
-    const meta = get('parserMeta');
-    if (!meta) {
-        return;
-    }
+    // Show parser metadata succinctly in the parser status text (parserStatusText)
+    const statusEl = get('parserStatusText');
+    if (!statusEl || !result) return;
     const details = [];
-    if (result.matchedDatasetId) {
-        details.push(`Dataset: ${result.matchedDatasetId}`);
-    }
-    if (typeof result.matchConfidence === 'number') {
-        details.push(`Similarity ${result.matchConfidence.toFixed(3)}`);
-    }
-    if (result.datasetTopics && result.datasetTopics.length > 0) {
-        details.push(`Topics: ${result.datasetTopics.join(', ')}`);
-    }
-    if (details.length === 0) {
-        details.push('No dataset match yet. Connect to GitHub and sync topics for better suggestions.');
-    }
-    meta.textContent = details.join(' • ');
+    if (result.matchedDatasetId) details.push(`Dataset: ${result.matchedDatasetId}`);
+    if (typeof result.matchConfidence === 'number') details.push(`Similarity ${result.matchConfidence.toFixed(3)}`);
+    if (result.datasetTopics && result.datasetTopics.length > 0) details.push(`Topics: ${result.datasetTopics.join(', ')}`);
+    if (details.length === 0) details.push('No dataset match yet.');
+    statusEl.textContent = details.join(' • ');
 }
 
 function setParserStatus(message) {
@@ -1234,16 +1220,10 @@ function refreshQuestionAIFromCache() {
 }
 
 function resetParserUI() {
-    setChatPromptOutput('');
+    // Clear parser input and show ready status. Chat preview and parser meta elements removed.
     setParserStatus('Paste a raw question and click "Analyze".');
-    const meta = get('parserMeta');
-    if (meta) {
-        meta.textContent = '';
-    }
     const input = get('aiRawQuestionInput');
-    if (input) {
-        input.value = '';
-    }
+    if (input) input.value = '';
 }
 
 // Queue Management
@@ -1625,6 +1605,7 @@ function resetFormFields() {
     // clear inline upload maps
     questionInlineUploads = {};
     structuralInlineUploads = {};
+    mcqInlineUploads = {};
 
     const questionTypeSelect = get('questionType');
     if (questionTypeSelect) {

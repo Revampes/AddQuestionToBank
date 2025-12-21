@@ -25,7 +25,7 @@
         <!-- Tab 1: Add Questions -->
         <div id="add-tab" class="tab-content active">
             <!-- Left Column: Configuration & Input -->
-            <div class="form-section">
+                <div class="form-section">
                 <div class="github-config">
                     <h3>GitHub Configuration</h3>
                     <div class="form-group">
@@ -50,6 +50,17 @@
                 <div id="editModeIndicator" class="edit-mode-indicator">
                     <span id="editModeText">Editing Question...</span>
                     <button class="btn btn-sm btn-secondary" id="cancelEditBtn">Cancel</button>
+                </div>
+
+                <!-- AI Question Parser (moved above Question Details) -->
+                <div class="form-group">
+                    <label for="aiRawQuestionInput">AI Question Parser</label>
+                    <textarea id="aiRawQuestionInput" rows="10" placeholder="Paste the full exam question including header, prompt, and MCQ options."></textarea>
+                    <div class="toolbar" style="justify-content: flex-start; gap: 12px; margin-top: 8px;">
+                        <button type="button" id="runQuestionParserBtn" class="btn btn-secondary btn-sm">✨ Analyze &amp; Autofill</button>
+                        <span class="hint" id="parserStatusText">Paste a raw question and click "Analyze".</span>
+                    </div>
+                    <div class="hint">Powered by QuestionBankLLM - automatically predicts source, year, topics, type, and answers.</div>
                 </div>
 
                 <h3>Question Details</h3>
@@ -98,6 +109,41 @@
                         <input type="number" id="marks" min="0" step="1" required placeholder="e.g., 5">
                     </div>
                     
+                    <!-- MCQ Options: moved below Question Text to ensure question appears above options/answers -->
+
+                    <!-- structuralSection moved below question fields so question appears before answer -->
+                    
+                    <div class="form-group">
+                        <label class="required">Topics</label>
+                        <div class="checkbox-group" id="topicCheckboxes">
+                            <!-- Topics will be added dynamically -->
+                        </div>
+                    </div>
+                    
+
+                    
+                    <div class="form-group">
+                        <label for="questionText" class="required">Question Text</label>
+                        <div class="rich-text-toolbar" id="questionTextToolbar">
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'b')" title="Bold">B</button>
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'u')" title="Underline">U</button>
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'sup')" title="Superscript">x²</button>
+                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'sub')" title="Subscript">x₂</button>
+                        </div>
+                        <textarea id="questionText" rows="30" required placeholder="Enter the question text..."></textarea>
+                    </div>
+
+                    <!-- Question Image (moved to appear immediately after question text) -->
+                    <div class="form-group">
+                        <label for="questionImageFile">Question Image</label>
+                        <input type="file" id="questionImageFile" accept="image/*" class="file-input">
+                        <div style="display:flex;gap:8px;margin-top:8px;">
+                            <button type="button" id="insertQuestionInlineBtn" class="btn btn-secondary btn-sm">Insert image inline</button>
+                            <div class="hint" style="margin:0;">Upload an image and use "Insert image inline" to place it inside the question text.</div>
+                        </div>
+                    </div>
+
+                    <!-- Place MCQ options after the question text so the question always appears above options -->
                     <div class="form-group" id="mcqSection" style="display: none;">
                         <label>MCQ Options</label>
                         <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
@@ -118,50 +164,7 @@
                         </button>
                     </div>
 
-                    <!-- structuralSection moved below question fields so question appears before answer -->
                     
-                    <div class="form-group">
-                        <label class="required">Topics</label>
-                        <div class="checkbox-group" id="topicCheckboxes">
-                            <!-- Topics will be added dynamically -->
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="aiRawQuestionInput">AI Question Parser</label>
-                        <textarea id="aiRawQuestionInput" rows="10" placeholder="Paste the full exam question including header, prompt, and MCQ options."></textarea>
-                        <div class="toolbar" style="justify-content: flex-start; gap: 12px; margin-top: 8px;">
-                            <button type="button" id="runQuestionParserBtn" class="btn btn-secondary btn-sm">✨ Analyze &amp; Autofill</button>
-                            <span class="hint" id="parserStatusText">Paste a raw question and click "Analyze".</span>
-                        </div>
-                        <div class="hint">Powered by QuestionBankLLM - automatically predicts source, year, topics, type, and answers.</div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="chatPromptOutput">Chat Prompt Preview</label>
-                        <textarea id="chatPromptOutput" rows="8" placeholder="Run the parser to generate a clean prompt and options for chat tools." readonly></textarea>
-                        <div class="hint" id="parserMeta"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="questionText" class="required">Question Text</label>
-                        <div class="rich-text-toolbar" id="questionTextToolbar">
-                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'b')" title="Bold">B</button>
-                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'u')" title="Underline">U</button>
-                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'sup')" title="Superscript">x²</button>
-                            <button type="button" class="rich-text-btn" onclick="insertTag('questionText', 'sub')" title="Subscript">x₂</button>
-                        </div>
-                        <textarea id="questionText" rows="30" required placeholder="Enter the question text..."></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="questionImageFile">Question Image</label>
-                        <input type="file" id="questionImageFile" accept="image/*" class="file-input">
-                        <div style="display:flex;gap:8px;margin-top:8px;">
-                            <button type="button" id="insertQuestionInlineBtn" class="btn btn-secondary btn-sm">Insert image inline</button>
-                            <div class="hint" style="margin:0;">Upload an image and use "Insert image inline" to place it inside the question text.</div>
-                        </div>
-                    </div>
 
                                     <!-- Structural Answer block placed after question fields as requested -->
                                     <div class="form-group" id="structuralSection" style="display: none;">
