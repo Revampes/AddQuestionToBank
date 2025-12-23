@@ -10,6 +10,8 @@ let questionInlineUploads = {}; // uid -> File
 let structuralInlineUploads = {}; // uid -> File
 let mcqInlineUploads = {}; // uid -> File for MCQ option inline images
 let lastAIParseResult = null;
+// MC answers map loaded from workspace `mcans` file (year -> array of 36 answers)
+let MCANS_MAP = {};
 
 // Fixed set of three MCQ templates (global, must be initialized early)
 const MCQ_TEMPLATES = [
@@ -50,6 +52,8 @@ function initApp() {
     initializeTopics();
     initializeMCQ();
     initializeStructural();
+    // Load local MC answer key file to allow DSE autofill
+    try { loadMCANS(); } catch (e) { console.warn('loadMCANS failed to start:', e); }
     
     // Event Listeners
     get('questionForm').addEventListener('submit', handleFormSubmit);
@@ -926,6 +930,14 @@ function fileToBase64(file) {
 function updatePreview() {
     const questionData = collectQuestionData();
     get('jsonPreview').textContent = JSON.stringify(questionData, null, 2);
+    const qPreview = get('questionTextPreview');
+    if (qPreview) {
+        // Render the question text preserving newlines
+        const txt = questionData.question || '';
+        // Basic HTML-escape to avoid injection
+        const escaped = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        qPreview.innerHTML = escaped.replace(/\n/g, '<br>');
+    }
 }
 
 async function handleAutoParseClick(event) {
@@ -1017,7 +1029,27 @@ function applyAIParseResult(result) {
 
     if (derivedType === 'Multiple-choice') {
         populateMCQOptionsFromAI(result.answerOptions);
-        setCorrectOptionSelection(result.correctOption);
+        // If this appears to be a DSE question and we have a local answer key, prefer that
+        try {
+            // Support both camelCase and snake_case keys from different analyzers
+            const yearVal = (result.year !== null && result.year !== undefined) ? result.year : ((result.question_number !== null && result.question_number !== undefined) ? result.question_number : (get('year') ? get('year').value : null));
+            const qnumVal = (result.questionNumber !== null && result.questionNumber !== undefined) ? result.questionNumber : (result.question_number !== null && result.question_number !== undefined ? result.question_number : null);
+            const sourceStr = (result.source || result.Source || '').toString().toLowerCase();
+            const matchedId = (result.matchedDatasetId || result.matched_dataset_id || '').toString().toLowerCase();
+            const isDSE = sourceStr.includes('dse') || matchedId.includes('dse');
+            const mcansLetter = getMCAnswer(yearVal, qnumVal);
+            if (isDSE && mcansLetter) {
+                setCorrectOptionSelection(mcansLetter);
+                // Update result so preview/metadata reflect the selection
+                result.correctOption = mcansLetter;
+                showNotification('Correct option auto-filled from local MCANS file', 'info');
+            } else {
+                setCorrectOptionSelection(result.correctOption);
+            }
+        } catch (e) {
+            console.warn('MCANS autofill error:', e);
+            setCorrectOptionSelection(result.correctOption);
+        }
     } else {
         populateStructuralFromAI(result.structuredAnswer);
     }
@@ -1211,6 +1243,51 @@ function setParserStatus(message) {
         return;
     }
     statusEl.textContent = message;
+}
+
+// Load and parse local MC answers file (`mcans`) into `MCANS_MAP`.
+async function loadMCANS() {
+    try {
+        const resp = await fetch('mcans');
+        if (!resp.ok) {
+            console.warn('Could not fetch mcans file:', resp.status);
+            return;
+        }
+        const txt = await resp.text();
+        parseMCANS(txt);
+    } catch (e) {
+        console.warn('Failed to load mcans:', e);
+    }
+}
+
+function parseMCANS(text) {
+    MCANS_MAP = {};
+    if (!text) return;
+    const lines = text.split(/\r?\n/);
+    lines.forEach(line => {
+        const s = line.trim();
+        if (!s) return;
+        const parts = s.split(/\s+/);
+        const year = parts.shift();
+        if (!year) return;
+        const joined = parts.join('').replace(/[^a-dA-D]/g, '').toLowerCase();
+        // Only store if we have at least some answers
+        if (joined.length > 0) {
+            // Keep as array of single-letter answers
+            MCANS_MAP[year] = joined.split('');
+        }
+    });
+    console.log('MCANS loaded for years:', Object.keys(MCANS_MAP));
+}
+
+function getMCAnswer(year, questionNumber) {
+    if (!year || !questionNumber) return null;
+    const key = year.toString();
+    const row = MCANS_MAP[key];
+    if (!row || !Array.isArray(row)) return null;
+    const idx = parseInt(questionNumber, 10) - 1;
+    if (Number.isNaN(idx) || idx < 0 || idx >= row.length) return null;
+    return row[idx] ? row[idx].toString().toUpperCase() : null;
 }
 
 function refreshQuestionAIFromCache() {

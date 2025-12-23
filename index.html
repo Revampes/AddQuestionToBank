@@ -219,7 +219,12 @@
             <!-- Right Column: Preview & Status -->
             <div class="form-section">
                 <h3>Question Preview</h3>
-                <div class="json-output" id="jsonPreview">
+                                <div style="margin-bottom:12px;">
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Question Text Preview</label>
+                                        <div id="questionTextPreview" style="background:#0b1220; padding:12px; border-radius:6px; min-height:80px; white-space:pre-wrap;">Preview will appear here...</div>
+                                </div>
+
+                                <div class="json-output" id="jsonPreview">
 {
   "question": "Preview will appear here..."
 }
@@ -301,7 +306,7 @@
                     document.body.appendChild(s);
                 }
                 loadNext(0);
-        })(['js/config.js','js/utils.js','js/github.js','js/ui.js','js/parser.js','js/app.js']);
+        })(['js/config.js','js/utils.js','js/github.js','js/ui.js','js/api_client.js','js/app.js']);
     </script>
 </body>
 </html>
