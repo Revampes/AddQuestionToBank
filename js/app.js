@@ -133,6 +133,91 @@ function initApp() {
     get('connectionStatus').className = 'status-dot offline';
     get('connectionText').textContent = 'Disconnected from GitHub';
     resetParserUI();
+
+    const refreshBtn = get('refreshMissingBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            renderMissingDSE();
+        });
+    }
+}
+
+
+// Render Missing DSE Questions (2012-2022)
+function renderMissingDSE() {
+    const out = get('missingOutput');
+    if (!out) return;
+
+    const startYear = 2012, endYear = 2022;
+    const years = [];
+    for (let y = startYear; y <= endYear; y++) years.push(y);
+
+    if (!cachedTopicFiles || Object.keys(cachedTopicFiles).length === 0) {
+        out.textContent = 'No topic files loaded (cachedTopicFiles is empty). Load topics from GitHub first using Test Connection.';
+        return;
+    }
+
+    const foundMap = {};
+    const occMap = {};
+    years.forEach(y => { foundMap[y] = new Set(); occMap[y] = {}; });
+
+    Object.entries(cachedTopicFiles).forEach(([fileName, fileData]) => {
+        const content = fileData && fileData.content;
+        if (!content || !Array.isArray(content.questions)) return;
+        content.questions.forEach(q => {
+            if (!q) return;
+            const src = (q.source || '').toString().trim().toUpperCase();
+            const yr = parseInt(q.year, 10);
+            const num = parseInt(q.questionNumber, 10);
+            if (src === 'DSE' && !isNaN(yr) && yr >= startYear && yr <= endYear && Number.isInteger(num) && num >= 1 && num <= 36) {
+                foundMap[yr].add(num);
+                occMap[yr][num] = occMap[yr][num] || [];
+                occMap[yr][num].push(fileName);
+            }
+        });
+    });
+
+    if (Array.isArray(questionQueue)) {
+        questionQueue.forEach((qi, idx) => {
+            const src = (qi.source || '').toString().trim().toUpperCase();
+            const yr = parseInt(qi.year, 10);
+            const num = parseInt(qi.questionNumber, 10);
+            if (src === 'DSE' && !isNaN(yr) && yr >= startYear && yr <= endYear && Number.isInteger(num) && num >= 1 && num <= 36) {
+                foundMap[yr].add(num);
+                occMap[yr][num] = occMap[yr][num] || [];
+                occMap[yr][num].push(`queue:item#${idx}`);
+            }
+        });
+    }
+
+    let outText = '';
+    years.forEach(y => {
+        const present = foundMap[y] || new Set();
+        const missing = [];
+        for (let i = 1; i <= 36; i++) if (!present.has(i)) missing.push('Q' + i);
+        if (missing.length === 0) {
+            outText += `${y}: All questions present (1-36)\n`;
+        } else {
+            outText += `${y}: Missing ${missing.length} => ${missing.join(', ')}\n`;
+        }
+    });
+
+    outText += `\nDuplicates found (same Year + Question Number present in multiple locations):\n`;
+    let dupCount = 0;
+    years.forEach(y => {
+        const entries = occMap[y];
+        Object.keys(entries).forEach(qnKey => {
+            const uniq = Array.from(new Set(entries[qnKey] || []));
+            if (uniq.length > 1) {
+                dupCount++;
+                outText += `${y} Q${qnKey}: ${uniq.join(' | ')}\n`;
+            }
+        });
+    });
+    if (dupCount === 0) outText += 'None\n';
+
+    out.textContent = outText;
 }
 
 if (document.readyState === 'loading') {
@@ -145,6 +230,9 @@ if (document.readyState === 'loading') {
 // Tab Switching
 window.showTab = function(tabId) {
     switchToTab(tabId);
+    try {
+        if (tabId === 'missing-tab') renderMissingDSE();
+    } catch (e) { console.warn('renderMissingDSE failed:', e); }
 }
 
 // MCQ Logic

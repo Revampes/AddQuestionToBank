@@ -20,7 +20,17 @@
             <button class="tab-btn active" onclick="showTab('add-tab')">➕ Add Questions</button>
             <button class="tab-btn" onclick="showTab('queue-tab')">📋 Queue (<span id="queueCount">0</span>)</button>
             <button class="tab-btn" onclick="showTab('manager-tab')">✏️ Manage Questions</button>
+            <button class="tab-btn" onclick="showTab('missing-tab')">🧾 Missing DSE (2012-2022)</button>
         </div>
+        <script>
+            // Fallback showTab to avoid onclick errors before main scripts load
+            window.showTab = window.showTab || function(tabId){
+                if (typeof switchToTab === 'function') return switchToTab(tabId);
+                document.addEventListener('DOMContentLoaded', function(){
+                    if (typeof switchToTab === 'function') try { switchToTab(tabId); } catch(e){}
+                });
+            };
+        </script>
         
         <!-- Tab 1: Add Questions -->
         <div id="add-tab" class="tab-content active">
@@ -239,6 +249,20 @@
                 </div>
             </div>
         </div>
+        <!-- Tab 4: Missing DSE questions -->
+        <div id="missing-tab" class="tab-content full-width">
+            <div class="form-section">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <h3>Missing DSE Questions (2012 - 2022)</h3>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <button id="refreshMissingBtn" class="btn">🔄 Refresh</button>
+                    </div>
+                </div>
+
+                <div id="missingOutput" style="background:#0b1220; color:#fff; padding:12px; border-radius:6px; min-height:160px; white-space:pre-wrap; font-family:monospace;">Click Refresh to scan loaded topics for missing DSE questions.</div>
+                <div class="hint" style="margin-top:10px;">This tab checks `cachedTopicFiles` currently loaded in the app and reports which question numbers (Q1–Q36) are missing per year.</div>
+            </div>
+        </div>
 
         <!-- Tab 2: Queue -->
         <div id="queue-tab" class="tab-content full-width">
@@ -285,12 +309,6 @@
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="js/config.js"></script>
-    <script src="js/utils.js"></script>
-    <script src="js/github.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/parser.js"></script>
     <!-- Loader that appends a cache-busting timestamp to ensure latest files are fetched -->
     <script>
         (function loadScriptsSequentially(files) {
@@ -306,7 +324,7 @@
                     document.body.appendChild(s);
                 }
                 loadNext(0);
-        })(['js/config.js','js/utils.js','js/github.js','js/ui.js','js/api_client.js','js/app.js']);
+        })(['js/config.js','js/utils.js','js/github.js','js/ui.js','js/parser.js','js/api_client.js','js/app.js']);
     </script>
 </body>
 </html>
