@@ -15,13 +15,45 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`API Error: ${response.statusText}`);
+                    const errorText = await response.text();
+                    throw new Error(`API Error: ${response.status} ${errorText}`);
                 }
                 
                 const data = await response.json();
                 return this.adaptResponse(data);
             } catch (error) {
                 console.error('Analysis failed:', error);
+                throw error;
+            }
+        }
+
+        async analyzeFile(file) {
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${this.apiUrl}/analyze-file`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API Error: ${response.status} ${errorText}`);
+                }
+
+                const data = await response.json();
+                const questions = Array.isArray(data.questions)
+                    ? data.questions.map((entry) => this.adaptResponse(entry))
+                    : [this.adaptResponse(data)];
+
+                return {
+                    fileName: data.file_name || file.name,
+                    questionCount: data.question_count || questions.length,
+                    questions: questions.filter(Boolean)
+                };
+            } catch (error) {
+                console.error('File analysis failed:', error);
                 throw error;
             }
         }
@@ -33,20 +65,33 @@
         }
 
         adaptResponse(data) {
-            // Adapt backend response to match what app.js expects
+            if (!data) {
+                return null;
+            }
+
+            const rawOptions = data.answer_options || data.answerOptions || [];
+            const answerOptions = rawOptions.map(option => ({
+                label: option.label,
+                text: option.text
+            }));
+
             return {
                 source: data.source,
                 year: data.year,
-                paper: null, // Backend might not return paper, or it's part of source?
-                questionNumber: data.question_number,
-                topicName: data.topic_name,
-                questionType: data.question_type,
-                prompt: data.prompt,
-                answerOptions: data.answer_options,
-                correctOption: data.correct_option,
-                structuredAnswer: null, // Backend doesn't seem to return structured answer for non-MCQ yet
-                matchedDatasetId: null, // Backend handles matching internally
-                matchConfidence: data.match_confidence
+                paper: data.paper || null,
+                questionNumber: data.question_number ?? data.questionNumber ?? null,
+                topicId: data.topic_id ?? data.topicId ?? null,
+                topicName: data.topic_name ?? data.topicName ?? null,
+                questionType: data.question_type ?? data.questionType ?? null,
+                prompt: data.prompt || data.rawPrompt || null,
+                answerOptions,
+                correctOption: data.correct_option ?? data.correctOption ?? null,
+                correctOptionText: data.correct_option_text ?? data.correctOptionText ?? null,
+                structuredAnswer: data.structured_answer ?? data.structuredAnswer ?? null,
+                matchedDatasetId: data.matched_dataset_id ?? data.matchedDatasetId ?? null,
+                matchConfidence: data.match_confidence ?? data.matchConfidence ?? null,
+                matchMetadata: data.match_metadata ?? data.matchMetadata ?? null,
+                datasetTopics: data.dataset_topics ?? data.datasetTopics ?? null
             };
         }
     }

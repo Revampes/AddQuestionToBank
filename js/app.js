@@ -9,7 +9,11 @@ let structuralKeywords = [];
 let questionInlineUploads = {}; // uid -> File
 let structuralInlineUploads = {}; // uid -> File
 let mcqInlineUploads = {}; // uid -> File for MCQ option inline images
+let subQuestionTextInlineUploads = {}; // uid -> File for sub-question text inline images
+let subSubQuestionTextInlineUploads = {}; // uid -> File for sub-sub-question text inline images
 let lastAIParseResult = null;
+let lastAIParseBatch = [];
+let selectedAIParseIndex = 0;
 // MC answers map loaded from workspace `mcans` file (year -> array of 36 answers)
 let MCANS_MAP = {};
 
@@ -82,6 +86,7 @@ function initApp() {
     if (parserInput) {
         parserInput.addEventListener('input', () => setParserStatus('Ready to analyze your latest paste.'));
     }
+    initParserFileUpload();
     const insertQuestionInlineBtn = get('insertQuestionInlineBtn');
     if (insertQuestionInlineBtn) {
         insertQuestionInlineBtn.addEventListener('click', (e) => {
@@ -287,6 +292,8 @@ function initializeMCQ() {
                 radio.checked = false;
             });
         }
+
+        updateStructuralMarksUI();
     };
 
     questionType.addEventListener('change', function() {
@@ -342,6 +349,80 @@ function initializeStructural() {
     if (addSubQuestionBtn) {
         addSubQuestionBtn.addEventListener('click', () => addSubQuestion());
     }
+
+    const essaySelect = get('structuralIsEssay');
+    if (essaySelect) {
+        essaySelect.addEventListener('change', () => {
+            updateStructuralMarksUI();
+            updatePreview();
+        });
+    }
+
+    updateStructuralMarksUI();
+}
+
+function isStructuralEssaySelected() {
+    const select = get('structuralIsEssay');
+    if (!select) return false;
+    return select.value === 'yes';
+}
+
+function setStructuralEssayValue(isEssay) {
+    const select = get('structuralIsEssay');
+    if (!select) return;
+    select.value = isEssay ? 'yes' : 'no';
+    updateStructuralMarksUI();
+}
+
+function updateStructuralMarksUI() {
+    const questionType = get('questionType');
+    const isStructural = questionType && questionType.value === 'Structural question';
+    const essaySelected = isStructural && isStructuralEssaySelected();
+
+    const essayGroup = get('structuralEssayGroup');
+    if (essayGroup) {
+        essayGroup.style.display = isStructural ? 'block' : 'none';
+    }
+
+    const marksGroup = get('marksGroup');
+    if (marksGroup) {
+        marksGroup.style.display = (!isStructural || essaySelected) ? 'block' : 'none';
+    }
+
+    const marksInput = get('marks');
+    if (marksInput) {
+        marksInput.required = !isStructural || essaySelected;
+    }
+
+    const notice = get('structuralMarksNotice');
+    if (notice) {
+        notice.style.display = (isStructural && !essaySelected) ? 'block' : 'none';
+    }
+
+    document.querySelectorAll('.sub-marks').forEach(input => {
+        input.disabled = essaySelected;
+    });
+}
+
+function computeSubQuestionMarksTotal(subQuestions) {
+    if (!Array.isArray(subQuestions) || subQuestions.length === 0) return null;
+    let total = 0;
+    for (const sq of subQuestions) {
+        // If this sub-question has explicit marks use them
+        if (Number.isInteger(sq.marks)) {
+            total += sq.marks;
+            continue;
+        }
+        // Otherwise, if it has nested subQuestions, sum them recursively
+        if (Array.isArray(sq.subQuestions) && sq.subQuestions.length > 0) {
+            const nested = computeSubQuestionMarksTotal(sq.subQuestions);
+            if (!Number.isInteger(nested)) return null;
+            total += nested;
+            continue;
+        }
+        return null;
+    }
+    return total;
 }
 
 function addSubQuestion(data = null) {
@@ -357,6 +438,8 @@ function addSubQuestion(data = null) {
     const labelVal = data ? data.subLabel : '';
     const questionVal = data ? data.subQuestion : '';
     const answerVal = data ? data.subAnswer : '';
+    const marksRaw = data ? (data.marks ?? data.subMarks) : '';
+    const marksVal = (marksRaw === 0 || marksRaw) ? marksRaw : '';
     
     div.innerHTML = `
         <button type="button" class="remove-option" onclick="removeSubQuestion(this)" style="position:absolute; top:5px; right:5px; background:none; border:none; font-size:1.2em; cursor:pointer;">×</button>
@@ -364,6 +447,10 @@ function addSubQuestion(data = null) {
             <div style="width:80px;">
                 <label style="font-size:0.8em; display:block;">Label</label>
                 <input type="text" class="sub-label" placeholder="a, b, i..." value="${labelVal}" style="width:100%; padding:4px;">
+            </div>
+            <div style="width:90px;">
+                <label style="font-size:0.8em; display:block;">Marks</label>
+                <input type="number" class="sub-marks" min="0" step="1" placeholder="0" value="${marksVal}" style="width:100%; padding:4px;">
             </div>
             <div style="flex:1;">
                 <label style="font-size:0.8em; display:block;">Sub-question Text</label>
@@ -374,6 +461,10 @@ function addSubQuestion(data = null) {
                     <button type="button" class="rich-text-btn" onclick="insertTag('subq-${id}', 'sub')">x₂</button>
                 </div>
                 <textarea id="subq-${id}" class="sub-question-text" rows="2" style="width:100%;">${questionVal}</textarea>
+                <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+                    <input type="file" class="sub-question-text-image-file file-input" accept="image/*">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="insertInlineSubQuestionImage('subq-${id}')">Insert image inline</button>
+                </div>
             </div>
         </div>
         <div>
@@ -390,6 +481,13 @@ function addSubQuestion(data = null) {
                 <button type="button" class="btn btn-secondary btn-sm" onclick="insertInlineSubImage('suba-${id}')">Insert image inline</button>
             </div>
         </div>
+        <div style="margin-top:10px;">
+            <label style="display:block; font-weight:600; margin-bottom:8px;">Sub-sub-questions</label>
+            <div class="sub-sub-questions-container">
+                <!-- sub-sub-questions will be appended here -->
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addSubSubQuestion('${id}')">+ Add Sub-sub-question</button>
+        </div>
     `;
     
     container.appendChild(div);
@@ -397,7 +495,101 @@ function addSubQuestion(data = null) {
     div.querySelectorAll('input, textarea').forEach(el => {
         el.addEventListener('input', updatePreview);
     });
-    
+
+    updateStructuralMarksUI();
+    updatePreview();
+
+    // If initial data contains nested sub-questions, add them into the nested container
+    if (data && Array.isArray(data.subQuestions) && data.subQuestions.length > 0) {
+        const subsubContainer = div.querySelector('.sub-sub-questions-container');
+        data.subQuestions.forEach(subsub => addSubSubQuestion(id, subsub, subsubContainer));
+    }
+}
+
+function addSubSubQuestion(parentId, data = null, containerArg = null) {
+    // parentId is the id of the top-level sub-question (div.dataset.id)
+    const parentDiv = document.querySelector(`.sub-question-item[data-id="${parentId}"]`);
+    const container = containerArg || (parentDiv ? parentDiv.querySelector('.sub-sub-questions-container') : null);
+    if (!container) return;
+
+    const uid = Date.now() + Math.random().toString(36).substr(2, 6);
+    const div = document.createElement('div');
+    div.className = 'sub-sub-question-item';
+    div.style.cssText = 'border:1px dashed #2b6cb0; padding:8px; margin-bottom:8px; border-radius:4px; background:#2a2f35; position:relative;';
+
+    const labelVal = data ? data.subLabel : '';
+    const qVal = data ? data.subQuestion : '';
+    const aVal = data ? data.subAnswer : '';
+    const marksVal = (data && (data.marks === 0 || data.marks)) ? data.marks : '';
+
+    const textareaIdQ = `subsubq-${parentId}-${uid}`;
+    const textareaIdA = `subsuba-${parentId}-${uid}`;
+
+    div.innerHTML = `
+        <button type="button" class="remove-option" onclick="removeSubSubQuestion(this)" style="position:absolute; top:5px; right:5px; background:none; border:none; font-size:1.1em; cursor:pointer;">×</button>
+        <div style="display:flex; gap:10px; margin-bottom:6px; align-items:flex-start;">
+            <div style="width:80px;">
+                <label style="font-size:0.8em; display:block;">Label</label>
+                <input type="text" class="sub-label" placeholder="i, ii..." value="${labelVal}" style="width:100%; padding:4px;">
+            </div>
+            <div style="width:90px;">
+                <label style="font-size:0.8em; display:block;">Marks</label>
+                <input type="number" class="sub-marks" min="0" step="1" placeholder="0" value="${marksVal}" style="width:100%; padding:4px;">
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:0.8em; display:block;">Sub-sub Question</label>
+                <div class="rich-text-toolbar" style="margin-bottom:4px;">
+                    <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdQ}', 'b')">B</button>
+                    <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdQ}', 'u')">U</button>
+                    <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdQ}', 'sup')">x²</button>
+                    <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdQ}', 'sub')">x₂</button>
+                </div>
+                <textarea id="${textareaIdQ}" class="sub-question-text" rows="2" style="width:100%;">${qVal}</textarea>
+                <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+                    <input type="file" class="subsub-question-text-image-file file-input" accept="image/*">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="insertInlineSubSubQuestionImage('${textareaIdQ}')">Insert image inline</button>
+                </div>
+            </div>
+        </div>
+        <div>
+            <label style="font-size:0.8em; display:block;">Answer</label>
+            <div class="rich-text-toolbar" style="margin-bottom:4px;">
+                <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdA}', 'b')">B</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdA}', 'u')">U</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdA}', 'sup')">x²</button>
+                <button type="button" class="rich-text-btn" onclick="insertTag('${textareaIdA}', 'sub')">x₂</button>
+            </div>
+            <textarea id="${textareaIdA}" class="sub-answer-text" rows="2" style="width:100%;">${aVal}</textarea>
+            <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+                <input type="file" class="subsub-answer-image-file file-input" accept="image/*">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="insertInlineSubSubImage('${textareaIdA}', this)">Insert image inline</button>
+            </div>
+        </div>
+    `;
+
+    div.querySelectorAll('input, textarea').forEach(el => el.addEventListener('input', updatePreview));
+
+    container.appendChild(div);
+}
+
+window.removeSubSubQuestion = function(btn) {
+    btn.closest('.sub-sub-question-item')?.remove();
+    updatePreview();
+}
+
+function insertInlineSubSubImage(textareaId, btn) {
+    const textarea = get(textareaId);
+    if (!textarea) return showNotification('Textarea not found for inline image insertion', 'error');
+    const row = btn.closest('.sub-sub-question-item');
+    if (!row) return showNotification('Sub-sub container not found', 'error');
+    const fileInput = row.querySelector('.subsub-answer-image-file');
+    if (!fileInput) return showNotification('Please choose a sub-sub image file first', 'error');
+    const file = fileInput.files?.[0];
+    if (!file) return showNotification('No file selected for sub-sub image', 'error');
+    const uid = generateInlineUid('simg');
+    structuralInlineUploads[uid] = file;
+    insertAtCursor(textarea, `\n{{INLINE_IMG:${uid}}}\n`);
+    fileInput.value = '';
     updatePreview();
 }
 
@@ -594,6 +786,38 @@ function insertInlineOptionImage(textareaId, btn) {
     updatePreview();
 }
 
+function insertInlineSubQuestionImage(textareaId) {
+    const textarea = get(textareaId);
+    if (!textarea) return showNotification('Textarea not found for inline image insertion', 'error');
+    const container = textarea.closest('.sub-question-item');
+    if (!container) return showNotification('Sub-question container not found', 'error');
+    const fileInput = container.querySelector('.sub-question-text-image-file');
+    if (!fileInput) return showNotification('Please choose a sub-question image file first', 'error');
+    const file = fileInput.files?.[0];
+    if (!file) return showNotification('No file selected for sub-question text image', 'error');
+    const uid = generateInlineUid('subqimg');
+    subQuestionTextInlineUploads[uid] = file;
+    insertAtCursor(textarea, `\n{{INLINE_IMG:${uid}}}\n`);
+    fileInput.value = '';
+    updatePreview();
+}
+
+function insertInlineSubSubQuestionImage(textareaId) {
+    const textarea = get(textareaId);
+    if (!textarea) return showNotification('Textarea not found for inline image insertion', 'error');
+    const container = textarea.closest('.sub-sub-question-item');
+    if (!container) return showNotification('Sub-sub-question container not found', 'error');
+    const fileInput = container.querySelector('.subsub-question-text-image-file');
+    if (!fileInput) return showNotification('Please choose a sub-sub-question image file first', 'error');
+    const file = fileInput.files?.[0];
+    if (!file) return showNotification('No file selected for sub-sub-question text image', 'error');
+    const uid = generateInlineUid('subsubqimg');
+    subSubQuestionTextInlineUploads[uid] = file;
+    insertAtCursor(textarea, `\n{{INLINE_IMG:${uid}}}\n`);
+    fileInput.value = '';
+    updatePreview();
+}
+
 function renderKeywordList() {
     const list = get('keywordList');
     if (!list) return;
@@ -636,7 +860,7 @@ function handleFormSubmit(event) {
     }
 
     // Prevent duplicates for certain official sources (DSE, AL, CE) when adding new questions:
-    // Do not allow adding a question with the same source+year+questionNumber
+    // Do not allow adding a question with the same source+year+questionNumber+type
     // to any selected topic if that combination already exists in the repo or queue.
     const DUP_SOURCES = ['DSE', 'AL', 'CE'];
     function findDuplicatesForFiles(qData, files) {
@@ -644,14 +868,24 @@ function handleFormSubmit(event) {
         const s = (qData.source || '').toString();
         const y = (qData.year || '').toString();
         const num = (qData.questionNumber || '').toString();
+        const type = (qData.type || '').toString();
 
         if (!DUP_SOURCES.includes(s) || !y) return dupFiles;
 
         files.forEach(file => {
+            const matchesQuestion = q => {
+                if (!q) return false;
+                const qType = (q.type || q.questionType || '').toString();
+                return (q.source||'').toString() === s &&
+                    (q.year||'').toString() === y &&
+                    (q.questionNumber||'').toString() === num &&
+                    qType === type;
+            };
+
             // check cached topic files (from GitHub)
             const topic = cachedTopicFiles[file]?.content;
             if (topic && Array.isArray(topic.questions)) {
-                const found = topic.questions.find(q => (q.source||'').toString() === s && (q.year||'').toString() === y && (q.questionNumber||'').toString() === num);
+                const found = topic.questions.find(matchesQuestion);
                 if (found) {
                     dupFiles.push(file);
                     return;
@@ -661,7 +895,7 @@ function handleFormSubmit(event) {
             const queuedDup = questionQueue.find(qi => {
                 const targets = qi.targetFiles || [];
                 if (!targets.includes(file)) return false;
-                return (qi.source||'').toString() === s && (qi.year||'').toString() === y && (qi.questionNumber||'').toString() === num;
+                return matchesQuestion(qi);
             });
             if (queuedDup && !dupFiles.includes(file)) {
                 dupFiles.push(file);
@@ -685,17 +919,15 @@ function handleFormSubmit(event) {
         return;
     }
 
-    if (!Number.isInteger(questionData.marks)) {
-        showNotification('Please enter marks as a whole number', 'error');
-        return;
-    }
-
-    if (questionData.marks < 0) {
-        showNotification('Marks must be zero or greater', 'error');
-        return;
-    }
-
     if (questionData.type === 'Multiple-choice') {
+        if (!Number.isInteger(questionData.marks)) {
+            showNotification('Please enter marks as a whole number', 'error');
+            return;
+        }
+        if (questionData.marks < 0) {
+            showNotification('Marks must be zero or greater', 'error');
+            return;
+        }
         if (!questionData.options || questionData.options.length < 2) {
             showNotification('Please provide at least two options for MCQ questions', 'error');
             return;
@@ -709,6 +941,30 @@ function handleFormSubmit(event) {
     if (questionData.type === 'Structural question') {
         const structural = questionData.structuralAnswer || {};
         const subQs = structural.subQuestions || [];
+        const isEssay = Boolean(structural.isEssay);
+
+        if (isEssay) {
+            if (!Number.isInteger(questionData.marks)) {
+                showNotification('Please enter total marks as a whole number for essay questions', 'error');
+                return;
+            }
+            if (questionData.marks < 0) {
+                showNotification('Marks must be zero or greater', 'error');
+                return;
+            }
+        } else {
+            if (!subQs || subQs.length === 0) {
+                showNotification('Please add at least one sub-question for non-essay structural questions', 'error');
+                return;
+            }
+            const invalidIndex = subQs.findIndex(sq => !Number.isInteger(sq.marks) || sq.marks < 0);
+            if (invalidIndex >= 0) {
+                const label = subQs[invalidIndex]?.subLabel || `#${invalidIndex + 1}`;
+                showNotification(`Please enter marks for sub-question ${label}`, 'error');
+                return;
+            }
+        }
+
         // If there are no sub-questions, require full answer or image; if sub-questions are present, full answer is optional
         if (!subQs || subQs.length === 0) {
             const hasText = typeof structural.fullAnswer === 'string' && structural.fullAnswer.trim().length > 0;
@@ -737,9 +993,13 @@ function collectQuestionData() {
     const qnVal = get('questionNumber').value;
     const questionNumber = qnVal === '' ? null : parseInt(qnVal, 10);
     const type = get('questionType').value;
-    const marksValue = parseInt(get('marks').value, 10);
-    const marks = Number.isNaN(marksValue) ? null : marksValue;
     const isStructural = type === 'Structural question';
+    const structuralAnswer = isStructural ? getStructuralAnswerData() : null;
+    const marksValue = parseInt(get('marks').value, 10);
+    let marks = Number.isNaN(marksValue) ? null : marksValue;
+    if (isStructural && structuralAnswer && !structuralAnswer.isEssay) {
+        marks = computeSubQuestionMarksTotal(structuralAnswer.subQuestions || []);
+    }
     const existingId = editingIndex >= 0 && currentTopicData ? currentTopicData.content.questions[editingIndex].id : null;
     const id = existingId || generateQuestionId(source, year, questionNumber);
 
@@ -756,7 +1016,7 @@ function collectQuestionData() {
         image: null,
         options: getMCQOptions(),
         correctOption: getCorrectOption(),
-        structuralAnswer: isStructural ? getStructuralAnswerData() : null,
+        structuralAnswer: structuralAnswer,
         timestamp: new Date().toISOString()
     };
 }
@@ -808,16 +1068,45 @@ function getStructuralAnswerData() {
     const textField = get('structuralAnswerText');
     const fullAnswer = textField ? textField.value : '';
     const image = null; // image path/url removed; use file uploads/inline instead
+    const isEssay = isStructuralEssaySelected();
     
     const subQuestions = [];
     const container = get('subQuestionsContainer');
     if (container) {
         container.querySelectorAll('.sub-question-item').forEach(item => {
-            subQuestions.push({
+            const marksInput = item.querySelector('.sub-marks');
+            const marksRaw = marksInput ? marksInput.value : '';
+            const marksValue = marksRaw === '' ? null : parseInt(marksRaw, 10);
+            const marks = Number.isNaN(marksValue) ? null : marksValue;
+
+            // Collect nested sub-sub-questions for this item
+            const nested = [];
+            const nestedContainer = item.querySelector('.sub-sub-questions-container');
+            if (nestedContainer) {
+                nestedContainer.querySelectorAll('.sub-sub-question-item').forEach((subsub) => {
+                    const nm = subsub.querySelector('.sub-marks');
+                    const nmarksRaw = nm ? nm.value : '';
+                    const nmarksValue = nmarksRaw === '' ? null : parseInt(nmarksRaw, 10);
+                    const nmarks = Number.isNaN(nmarksValue) ? null : nmarksValue;
+                    nested.push({
+                        subLabel: subsub.querySelector('.sub-label').value,
+                        subQuestion: subsub.querySelector('.sub-question-text').value,
+                        subAnswer: subsub.querySelector('.sub-answer-text').value,
+                        marks: nmarks
+                    });
+                });
+            }
+
+            const obj = {
                 subLabel: item.querySelector('.sub-label').value,
                 subQuestion: item.querySelector('.sub-question-text').value,
-                subAnswer: item.querySelector('.sub-answer-text').value
-            });
+                subAnswer: item.querySelector('.sub-answer-text').value,
+                marks: marks
+            };
+            if (nested.length > 0) {
+                obj.subQuestions = nested;
+            }
+            subQuestions.push(obj);
         });
     }
 
@@ -825,6 +1114,7 @@ function getStructuralAnswerData() {
         fullAnswer,
         image,
         keywords: structuralKeywords.slice(),
+        isEssay,
         subQuestions: subQuestions.length > 0 ? subQuestions : undefined
     };
 }
@@ -837,7 +1127,9 @@ function collectImageUploads() {
         subAnswers: {},
         inlineOptions: {...mcqInlineUploads},
         inlineQuestion: {...questionInlineUploads},
-        inlineStructural: {...structuralInlineUploads}
+        inlineStructural: {...structuralInlineUploads},
+        inlineSubQuestionText: {...subQuestionTextInlineUploads},
+        inlineSubSubQuestionText: {...subSubQuestionTextInlineUploads}
     };
 
     const optionNodes = get('mcqOptions').querySelectorAll('.mcq-option');
@@ -848,13 +1140,22 @@ function collectImageUploads() {
         }
     });
 
-    // Collect sub-question image files
+    // Collect sub-question image files (including nested sub-sub files)
     const subItems = get('subQuestionsContainer')?.querySelectorAll('.sub-question-item') || [];
     subItems.forEach((item, idx) => {
         const fileInput = item.querySelector('.sub-answer-image-file');
         if (fileInput && fileInput.files && fileInput.files[0]) {
-            uploads.subAnswers[idx] = fileInput.files[0];
+            uploads.subAnswers[String(idx)] = fileInput.files[0];
         }
+
+        // nested sub-sub-question files keyed by "parent.child"
+        const nested = item.querySelectorAll('.sub-sub-question-item') || [];
+        nested.forEach((subsub, j) => {
+            const nestedFileInput = subsub.querySelector('.subsub-answer-image-file');
+            if (nestedFileInput && nestedFileInput.files && nestedFileInput.files[0]) {
+                uploads.subAnswers[`${idx}.${j}`] = nestedFileInput.files[0];
+            }
+        });
     });
 
     return uploads;
@@ -918,7 +1219,7 @@ async function applyImageUploads(question, uploads, topicFile) {
         }
     }
 
-    // Replace inline placeholders in sub-question answers
+    // Replace inline placeholders in sub-question answers (including nested sub-sub answers)
     if (uploads.inlineStructural && question.structuralAnswer && Array.isArray(question.structuralAnswer.subQuestions)) {
         for (const [uid, file] of Object.entries(uploads.inlineStructural)) {
             if (!file) continue;
@@ -928,21 +1229,44 @@ async function applyImageUploads(question, uploads, topicFile) {
                 if (typeof sq.subAnswer === 'string') {
                     sq.subAnswer = sq.subAnswer.split(placeholder).join(`![](${uploadedPath})`);
                 }
+                // nested sub-sub-questions
+                if (Array.isArray(sq.subQuestions)) {
+                    sq.subQuestions.forEach(nsq => {
+                        if (typeof nsq.subAnswer === 'string') {
+                            nsq.subAnswer = nsq.subAnswer.split(placeholder).join(`![](${uploadedPath})`);
+                        }
+                    });
+                }
             });
         }
     }
 
-    // Upload explicit sub-question image files (uploads.subAnswers keyed by index)
+    // Upload explicit sub-question image files (uploads.subAnswers keyed by index or parent.child)
     if (uploads.subAnswers && question.structuralAnswer && Array.isArray(question.structuralAnswer.subQuestions)) {
         for (const [indexStr, file] of Object.entries(uploads.subAnswers)) {
-            const idx = parseInt(indexStr, 10);
-            if (Number.isNaN(idx) || !question.structuralAnswer.subQuestions[idx]) continue;
-            const uploadedPath = await uploadSingleImage(file, question.id, `subq${idx+1}`, folder);
-            // Append the uploaded image to the subAnswer field (so it renders via processQuestionContent)
-            const sq = question.structuralAnswer.subQuestions[idx];
-            const existing = typeof sq.subAnswer === 'string' ? sq.subAnswer : '';
-            // Add newline image at end
-            sq.subAnswer = (existing.trim() ? existing + '\n' : '') + `![](${uploadedPath})`;
+            if (!file) continue;
+            if (indexStr.includes('.')) {
+                // nested sub-sub key like '2.1'
+                const parts = indexStr.split('.');
+                const p = parseInt(parts[0], 10);
+                const c = parseInt(parts[1], 10);
+                if (Number.isNaN(p) || Number.isNaN(c)) continue;
+                const parent = question.structuralAnswer.subQuestions[p];
+                if (!parent) continue;
+                // ensure nested array exists
+                if (!Array.isArray(parent.subQuestions) || !parent.subQuestions[c]) continue;
+                const uploadedPath = await uploadSingleImage(file, question.id, `subq${p+1}-${c+1}`, folder);
+                const sq = parent.subQuestions[c];
+                const existing = typeof sq.subAnswer === 'string' ? sq.subAnswer : '';
+                sq.subAnswer = (existing.trim() ? existing + '\n' : '') + `![](${uploadedPath})`;
+            } else {
+                const idx = parseInt(indexStr, 10);
+                if (Number.isNaN(idx) || !question.structuralAnswer.subQuestions[idx]) continue;
+                const uploadedPath = await uploadSingleImage(file, question.id, `subq${idx+1}`, folder);
+                const sq = question.structuralAnswer.subQuestions[idx];
+                const existing = typeof sq.subAnswer === 'string' ? sq.subAnswer : '';
+                sq.subAnswer = (existing.trim() ? existing + '\n' : '') + `![](${uploadedPath})`;
+            }
         }
     }
 
@@ -955,6 +1279,38 @@ async function applyImageUploads(question, uploads, topicFile) {
             question.options.forEach(opt => {
                 if (typeof opt.content === 'string') {
                     opt.content = opt.content.split(placeholder).join(`![](${uploadedPath})`);
+                }
+            });
+        }
+    }
+
+    // Handle inline sub-question text images
+    if (uploads.inlineSubQuestionText && question.structuralAnswer && Array.isArray(question.structuralAnswer.subQuestions)) {
+        for (const [uid, file] of Object.entries(uploads.inlineSubQuestionText)) {
+            if (!file) continue;
+            const uploadedPath = await uploadSingleImage(file, question.id, `inline-subq-text-${uid}`, folder);
+            const placeholder = `{{INLINE_IMG:${uid}}}`;
+            question.structuralAnswer.subQuestions.forEach(sq => {
+                if (typeof sq.subQuestion === 'string') {
+                    sq.subQuestion = sq.subQuestion.split(placeholder).join(`![](${uploadedPath})`);
+                }
+            });
+        }
+    }
+
+    // Handle inline sub-sub-question text images
+    if (uploads.inlineSubSubQuestionText && question.structuralAnswer && Array.isArray(question.structuralAnswer.subQuestions)) {
+        for (const [uid, file] of Object.entries(uploads.inlineSubSubQuestionText)) {
+            if (!file) continue;
+            const uploadedPath = await uploadSingleImage(file, question.id, `inline-subsubq-text-${uid}`, folder);
+            const placeholder = `{{INLINE_IMG:${uid}}}`;
+            question.structuralAnswer.subQuestions.forEach(sq => {
+                if (Array.isArray(sq.subQuestions)) {
+                    sq.subQuestions.forEach(nsq => {
+                        if (typeof nsq.subQuestion === 'string') {
+                            nsq.subQuestion = nsq.subQuestion.split(placeholder).join(`![](${uploadedPath})`);
+                        }
+                    });
                 }
             });
         }
@@ -1055,7 +1411,13 @@ async function handleAutoParseClick(event) {
     }
     try {
         const result = await window.questionAI.analyze(rawText);
+        if (!result) {
+            throw new Error('Analyzer returned no result.');
+        }
+        lastAIParseBatch = [result];
+        selectedAIParseIndex = 0;
         lastAIParseResult = result;
+        renderParserQuestionPicker();
         applyAIParseResult(result);
         const topicLabel = result.topicName ? `Detected topic: ${result.topicName}` : 'Analysis complete';
         const datasetLabel = result.matchedDatasetId ? `matched ${result.matchedDatasetId}` : 'no dataset match yet';
@@ -1146,6 +1508,133 @@ function applyAIParseResult(result) {
     updatePreview();
 }
 
+function initParserFileUpload() {
+    const uploadBtn = get('uploadQuestionFileBtn');
+    if (uploadBtn) {
+        uploadBtn.addEventListener('click', handleFileAnalyzeClick);
+    }
+
+    const picker = get('parserQuestionPicker');
+    if (picker) {
+        picker.addEventListener('change', (event) => {
+            const idx = parseInt(event.target.value, 10);
+            if (Number.isNaN(idx) || !lastAIParseBatch[idx]) {
+                return;
+            }
+            selectedAIParseIndex = idx;
+            lastAIParseResult = lastAIParseBatch[idx];
+            applyAIParseResult(lastAIParseResult);
+            setParserStatus(`Showing question ${idx + 1} of ${lastAIParseBatch.length}.`);
+        });
+    }
+}
+
+async function handleFileAnalyzeClick(event) {
+    if (event) {
+        event.preventDefault();
+    }
+    const fileInput = get('aiQuestionFileInput');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showNotification('Choose a PDF, DOCX, or TXT file before uploading.', 'warning');
+        return;
+    }
+    if (!window.questionAI || typeof window.questionAI.analyzeFile !== 'function') {
+        showNotification('File analyzer not ready. Please refresh the page.', 'error');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file) {
+        showNotification('Unable to read the selected file.', 'error');
+        return;
+    }
+
+    const button = event?.currentTarget || get('uploadQuestionFileBtn');
+    setParserStatus(`Analyzing ${file.name}...`);
+    if (button) {
+        button.disabled = true;
+        button.dataset.originalLabel = button.dataset.originalLabel || button.textContent;
+        button.textContent = 'Analyzing...';
+    }
+
+    try {
+        const payload = await window.questionAI.analyzeFile(file);
+        const questions = Array.isArray(payload?.questions) ? payload.questions.filter(Boolean) : [];
+
+        if (questions.length === 0) {
+            showNotification('No questions detected in that file.', 'warning');
+            setParserStatus('No question blocks were detected. Try a clearer scan.');
+            lastAIParseBatch = [];
+            renderParserQuestionPicker();
+            return;
+        }
+
+        lastAIParseBatch = questions;
+        selectedAIParseIndex = 0;
+        lastAIParseResult = questions[0];
+        renderParserQuestionPicker(payload?.fileName || file.name);
+        applyAIParseResult(lastAIParseResult);
+
+        const detectedLabel = payload?.fileName || file.name;
+        setParserStatus(`Detected ${questions.length} question(s) from ${detectedLabel}. Showing question 1.`);
+        showNotification(`Loaded ${questions.length} question(s) from ${detectedLabel}`, 'success');
+    } catch (error) {
+        console.error('File parser error:', error);
+        showNotification(`File parser error: ${error.message}`, 'error');
+        setParserStatus('File parser error. Please verify the upload and try again.');
+    } finally {
+        if (button) {
+            button.textContent = button.dataset.originalLabel || '📄 Upload & Analyze File';
+            button.disabled = false;
+        }
+        if (fileInput) {
+            fileInput.value = '';
+        }
+    }
+}
+
+function renderParserQuestionPicker(fileLabel = '') {
+    const wrapper = get('parserQuestionPickerWrapper');
+    const picker = get('parserQuestionPicker');
+    const meta = get('parserQuestionPickerMeta');
+    if (!wrapper || !picker) {
+        return;
+    }
+
+    if (!Array.isArray(lastAIParseBatch) || lastAIParseBatch.length <= 1) {
+        wrapper.style.display = 'none';
+        picker.innerHTML = '';
+        if (meta) meta.textContent = '';
+        return;
+    }
+
+    wrapper.style.display = 'flex';
+    picker.innerHTML = '';
+    lastAIParseBatch.forEach((question, idx) => {
+        const option = document.createElement('option');
+        option.value = idx.toString();
+        option.textContent = buildParserQuestionLabel(question, idx);
+        picker.appendChild(option);
+    });
+    picker.value = selectedAIParseIndex.toString();
+
+    if (meta) {
+        const parts = [];
+        if (fileLabel) parts.push(fileLabel);
+        parts.push(`${lastAIParseBatch.length} detected`);
+        meta.textContent = parts.join(' • ');
+    }
+}
+
+function buildParserQuestionLabel(question, index) {
+    const segments = [`Question ${index + 1}`];
+    if (question?.source) segments.push(question.source);
+    if (question?.year) segments.push(question.year);
+    if (question?.paper) segments.push(`Paper ${question.paper}`);
+    if (question?.questionNumber) segments.push(`Q${question.questionNumber}`);
+    return segments.filter(Boolean).join(' – ');
+}
+
 function determineQuestionType(result) {
     if (result.questionType) {
         return result.questionType === 'Multiple-choice' ? 'Multiple-choice' : 'Structural question';
@@ -1229,6 +1718,16 @@ function populateStructuralFromAI(structuredAnswer) {
             structuralText.value = structuredAnswer.fullAnswer || structuredAnswer.text || '';
         }
     }
+
+    let essayFlag = false;
+    if (structuredAnswer && typeof structuredAnswer === 'object' && typeof structuredAnswer.isEssay === 'boolean') {
+        essayFlag = structuredAnswer.isEssay;
+    } else if (structuredAnswer && Array.isArray(structuredAnswer.subQuestions) && structuredAnswer.subQuestions.length > 0) {
+        essayFlag = false;
+    } else if (structuredAnswer) {
+        essayFlag = true;
+    }
+    setStructuralEssayValue(essayFlag);
     if (structuredAnswer && Array.isArray(structuredAnswer.keywords)) {
         structuralKeywords = structuredAnswer.keywords.slice();
     } else {
@@ -1389,6 +1888,11 @@ function resetParserUI() {
     setParserStatus('Paste a raw question and click "Analyze".');
     const input = get('aiRawQuestionInput');
     if (input) input.value = '';
+    const fileInput = get('aiQuestionFileInput');
+    if (fileInput) fileInput.value = '';
+    lastAIParseBatch = [];
+    selectedAIParseIndex = 0;
+    renderParserQuestionPicker();
 }
 
 // Queue Management
@@ -1633,6 +2137,9 @@ window.editQuestion = function(file, index) {
 
     if (normalizedType === 'Structural question') {
         const structural = question.structuralAnswer || {};
+        const hasSubs = Array.isArray(structural.subQuestions) && structural.subQuestions.length > 0;
+        const essayFlag = typeof structural.isEssay === 'boolean' ? structural.isEssay : !hasSubs;
+        setStructuralEssayValue(essayFlag);
         if (structuralText) structuralText.value = structural.fullAnswer || '';
         structuralKeywords = Array.isArray(structural.keywords) ? [...structural.keywords] : [];
         
@@ -1647,6 +2154,7 @@ window.editQuestion = function(file, index) {
         if (structuralImageUrl) structuralImageUrl.value = '';
         structuralKeywords = [];
         if (subQContainer) subQContainer.innerHTML = '';
+        setStructuralEssayValue(false);
     }
     renderKeywordList();
     const structuralFileInput = get('structuralAnswerImageFile');
@@ -1753,6 +2261,11 @@ function resetFormFields() {
         keywordInput.value = '';
     }
 
+    const essaySelect = get('structuralIsEssay');
+    if (essaySelect) {
+        essaySelect.value = 'no';
+    }
+
     const mcqContainer = get('mcqOptions');
     if (mcqContainer) {
         mcqContainer.innerHTML = '';
@@ -1771,6 +2284,8 @@ function resetFormFields() {
     questionInlineUploads = {};
     structuralInlineUploads = {};
     mcqInlineUploads = {};
+    subQuestionTextInlineUploads = {};
+    subSubQuestionTextInlineUploads = {};
 
     const questionTypeSelect = get('questionType');
     if (questionTypeSelect) {

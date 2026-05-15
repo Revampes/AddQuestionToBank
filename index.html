@@ -20,7 +20,7 @@
             <button class="tab-btn active" onclick="showTab('add-tab')">➕ Add Questions</button>
             <button class="tab-btn" onclick="showTab('queue-tab')">📋 Queue (<span id="queueCount">0</span>)</button>
             <button class="tab-btn" onclick="showTab('manager-tab')">✏️ Manage Questions</button>
-            <button class="tab-btn" onclick="showTab('missing-tab')">🧾 Missing DSE (2012-2022)</button>
+            pip install --upgrade git+https://github.com/Revampes/QuestionBankLLM.git            pip install --upgrade git+https://github.com/Revampes/QuestionBankLLM.git            <button class="tab-btn" onclick="showTab('missing-tab')">🧾 Missing DSE (2012-2022)</button>
         </div>
         <script>
             // Fallback showTab to avoid onclick errors before main scripts load
@@ -71,6 +71,19 @@
                         <span class="hint" id="parserStatusText">Paste a raw question and click "Analyze".</span>
                     </div>
                     <div class="hint">Powered by QuestionBankLLM - automatically predicts source, year, topics, type, and answers.</div>
+                    <div style="margin-top: 12px;">
+                        <label for="aiQuestionFileInput" style="display:block; font-weight:600; margin-bottom:6px;">Upload PDF / DOCX / TXT</label>
+                        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                            <input type="file" id="aiQuestionFileInput" class="file-input" accept=".txt,.pdf,.doc,.docx">
+                            <button type="button" id="uploadQuestionFileBtn" class="btn btn-secondary btn-sm">📄 Upload &amp; Analyze File</button>
+                        </div>
+                        <div class="hint">Extracts every question (up to 36 per file) including detected source, year, paper, and answer.</div>
+                    </div>
+                    <div id="parserQuestionPickerWrapper" class="toolbar" style="display:none; justify-content:flex-start; gap:8px; margin-top:10px;">
+                        <label for="parserQuestionPicker" style="font-weight:600;">Detected Questions</label>
+                        <select id="parserQuestionPicker" style="min-width:240px;"></select>
+                        <span class="hint" id="parserQuestionPickerMeta"></span>
+                    </div>
                 </div>
 
                 <h3>Question Details</h3>
@@ -114,7 +127,16 @@
                         </select>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="structuralEssayGroup" style="display: none;">
+                        <label for="structuralIsEssay">Essay question?</label>
+                        <select id="structuralIsEssay">
+                            <option value="no" selected>No</option>
+                            <option value="yes">Yes</option>
+                        </select>
+                        <div class="hint">If yes, enter total marks below. If no, add marks for each sub-question.</div>
+                    </div>
+
+                    <div class="form-group" id="marksGroup">
                         <label for="marks" class="required">Marks</label>
                         <input type="number" id="marks" min="0" step="1" required placeholder="e.g., 5">
                     </div>
@@ -178,6 +200,7 @@
 
                                     <!-- Structural Answer block placed after question fields as requested -->
                                     <div class="form-group" id="structuralSection" style="display: none;">
+                                        <div id="structuralMarksNotice" class="hint" style="margin-bottom: 10px; display: none;">Marks are set per sub-question below.</div>
                                         <div class="sub-questions-manager" style="margin-bottom: 20px; padding: 15px; background-color: #2d3748; border-radius: 6px;">
                                             <label style="display:block; margin-bottom:10px; font-weight:600;">Sub-questions</label>
                                             <div id="subQuestionsContainer">
